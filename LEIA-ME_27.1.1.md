@@ -1,4 +1,6 @@
-# FM Evolution PRO 27 0.5.3-personal.29
+# FM Evolution PRO 27 0.5.3-personal.29.1
+
+Correção da Visão Geral do clube. A identificação do clube é exibida e a Steam 27.1.1 passa a ter o mapeamento dos campos administrativos.
 
 Build portátil Windows x64 para Football Manager 27 27.1.1 da Steam (26797085).
 

@@ -207,6 +207,16 @@ function ClubTabs({ tab, base, onSelect }: ClubTabsProps) {
 function ClubBody({ details, version, panel }: { details: ClubDetails; version:number; panel: PanelIds }) {
   return (
     <div className="profile-stack club-overview" role="tabpanel" id={panel.id} aria-labelledby={panel.labelledBy}>
+      <section className="profile-group">
+        <h3>Identificação do clube</h3>
+        <dl className="stats">
+          <Fact label="Nome">{details.name}</Fact>
+          {details.nation && <Fact label="País">{details.nation}</Fact>}
+          {details.league && <Fact label="Competição">{details.league}</Fact>}
+          {details.founded !== null && <Fact label="Fundação">{details.founded}</Fact>}
+          {details.stadium?.name && <Fact label="Estádio">{details.stadium.name}</Fact>}
+        </dl>
+      </section>
       <ClubExtras club={details.uid} version={version} group="overview" seasonTickets={details.seasonTickets} socialMedia={details.socialMedia} />
     </div>
   );

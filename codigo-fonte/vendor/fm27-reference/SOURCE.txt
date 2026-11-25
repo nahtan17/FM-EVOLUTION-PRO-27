@@ -2,3 +2,7 @@ Football-Manager-27-Editor, Jackhamerp24 and contributors
 https://github.com/Jackhamerp24/Football-Manager-27-Editor
 Commit: 045bfc37b27fe290dd91029721d5020d8b6295e3
 GPL-3.0. Referenced mappings ported to crates/fmlibre-core/src/club_extensions.rs.
+
+Club overview on Steam 27.1.1 (2511875): the overview-only profile combines
+the Steam build identity and club vtable with the club fields inherited from
+offsets/layouts/windows.json in the same Jackhamerp24 repository (GPL-3.0).

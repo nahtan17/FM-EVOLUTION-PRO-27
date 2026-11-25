@@ -11,6 +11,8 @@ use crate::transfer::{Patch,Patches,MoveError};
 const PROFILES:[&str;2]=[
  include_str!("../../../vendor/fm27-reference/offsets/27.1.0+2505117-steam.json"),
  include_str!("../../../vendor/fm27-reference/offsets/27.1.0+2505117-gamepass.json")];
+const STEAM_OVERVIEW: &str =
+    include_str!("../../../vendor/fm27-reference/offsets/27.1.1+2511875-steam-club-overview.json");
 pub(crate) fn number(v:&Value)->Option<u64>{v.as_u64().or_else(||v.as_str().and_then(|s|u64::from_str_radix(s.trim_start_matches("0x"),16).ok()))}
 fn error(e:impl ToString)->String{e.to_string()}
 pub(crate) fn rev(guards:&[(u64,Vec<u8>)])->String{let mut h=0xcbf29ce484222325u64;for (a,b) in guards{for x in a.to_le_bytes().iter().chain(b){h=(h^u64::from(*x)).wrapping_mul(0x100000001b3)}}format!("{h:016x}")}
@@ -38,7 +40,21 @@ impl Session{
   Err("Os campos adicionais ainda não têm perfil correspondente para este módulo do jogo.".into())
  }
  pub fn club_extra_view(&self,club:&ClubSummary)->Result<ExtraView,String>{
-  let p=self.extra_profile(club)?;let mut fields=Vec::new();let mut guards=vec![(club.address,self.process.read_bytes(club.address,16).map_err(error)?)];
+  let steam: Value = serde_json::from_str(STEAM_OVERVIEW).map_err(error)?;
+  let p = match self.fingerprint {
+      crate::PluginFingerprint::Pe { size_of_image, link_timestamp }
+          if number(&steam["imageSize"]) == Some(u64::from(size_of_image))
+              && number(&steam["peTimestamp"]) == Some(u64::from(link_timestamp)) =>
+      {
+          let vtable = number(&steam["club"]["vtable"]).ok_or("Perfil de clube inválido.")?;
+          if self.process.read_u64(club.address).map_err(error)? != self.plugin.base + vtable {
+              return Err("Não foi possível confirmar a estrutura deste clube.".into());
+          }
+          steam
+      }
+      _ => self.extra_profile(club)?,
+  };
+  let mut fields=Vec::new();let mut guards=vec![(club.address,self.process.read_bytes(club.address,16).map_err(error)?)];
   for (key,mapping) in p["club"]["fields"].as_object().ok_or("Perfil de clube inválido.")?{
    let Some((label,min,max))=meta(key) else{continue};if mapping["root"].as_str()!=Some("club"){continue}
    let path=mapping["path"].as_str().unwrap_or("").split("->").filter_map(|s|u64::from_str_radix(s.trim_start_matches("0x"),16).ok()).collect::<Vec<_>>();

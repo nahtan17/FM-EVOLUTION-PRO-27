@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "FM Evolution PRO 27",
   "mainBinaryName": "FMEvolutionPRO27",
-  "version": "0.5.3-personal.29",
+  "version": "0.5.3-personal.29.1",
   "identifier": "io.github.fmlivre27.personal",
   "build": {
     "beforeDevCommand": "npm run dev",

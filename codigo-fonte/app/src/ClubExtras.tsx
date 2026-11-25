@@ -60,7 +60,10 @@ export function ClubExtras({ club, version, group, seasonTickets, socialMedia }:
     if (pending) return;
     let alive = true;
     void call<ExtraView>("club_extra_view", { club }).then(next => {
-      if (alive) setView(next);
+      if (alive) {
+        setView(next);
+        setError("");
+      }
     }, failure => {
       if (alive) setError(describeError(failure));
     });

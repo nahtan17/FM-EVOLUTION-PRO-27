@@ -1,0 +1,80 @@
+{
+  "build": "27.1.1+2511875",
+  "imageSize": "0x1849A000",
+  "peTimestamp": "0x6AFF57A2",
+  "club": {
+    "vtable": "0x4E3C1C8",
+    "fields": {
+      "YearFounded": {
+        "root": "club",
+        "path": "0x100->0xD8",
+        "type": "int16"
+      },
+      "Status": {
+        "root": "club",
+        "path": "0x16A",
+        "type": "byte"
+      },
+      "ChairmanStatus": {
+        "root": "club",
+        "path": "0x100->0xDE",
+        "type": "int16"
+      },
+      "Morale": {
+        "root": "club",
+        "path": "0x100->0x121",
+        "type": "byte"
+      },
+      "AverageAttendance": {
+        "root": "club",
+        "path": "0xB0->0x68",
+        "type": "int32"
+      },
+      "MinimumAttendance": {
+        "root": "club",
+        "path": "0xB0->0x6C",
+        "type": "int32"
+      },
+      "MaximumAttendance": {
+        "root": "club",
+        "path": "0xB0->0x70",
+        "type": "int32"
+      },
+      "SeasonTicketHolders": {
+        "root": "club",
+        "path": "0x100->0xC0",
+        "type": "int32"
+      },
+      "SocialMediaFollowers": {
+        "root": "club",
+        "path": "0x100->0xF8",
+        "type": "int32"
+      },
+      "OwnershipType": {
+        "root": "club",
+        "path": "0x100->0x129",
+        "type": "byte"
+      },
+      "ChairpersonTitle": {
+        "root": "club",
+        "path": "0x100->0x12A",
+        "type": "byte"
+      },
+      "YouthImportance": {
+        "root": "club",
+        "path": "0x100->0x126",
+        "type": "byte"
+      },
+      "BackgroundColour": {
+        "root": "club",
+        "path": "0xB0->0xA8",
+        "type": "colour"
+      },
+      "ForegroundColour": {
+        "root": "club",
+        "path": "0xB0->0xA0",
+        "type": "colour"
+      }
+    }
+  }
+}
