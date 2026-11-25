@@ -9,7 +9,10 @@
     "updater:default",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://github.com/tozmoz/FMLibreEditor/*" }]
+      "allow": [
+        { "url": "https://github.com/nahtan17/FM-EVOLUTION-PRO-27/*" },
+        { "url": "https://github.com/tozmoz/FMLibreEditor/*" }
+      ]
     }
   ]
 }

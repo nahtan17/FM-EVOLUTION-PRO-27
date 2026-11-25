@@ -13,10 +13,10 @@ import { call, inTauri } from "./api";
 import { isMac } from "./shortcuts";
 
 /** The latest published release (drafts and pre-releases are left out by GitHub). */
-const LATEST_RELEASE = "https://api.github.com/repos/tozmoz/FMLibreEditor/releases/latest";
+const LATEST_RELEASE = "https://api.github.com/repos/nahtan17/FM-EVOLUTION-PRO-27/releases/latest";
 
 /** Where the releases are; the only pages the notice opens (the app may open no other, see capabilities/default.json). */
-const RELEASES_PAGE = "https://github.com/tozmoz/FMLibreEditor/releases";
+const RELEASES_PAGE = "https://github.com/nahtan17/FM-EVOLUTION-PRO-27/releases";
 
 /** The version the browser preview pretends to be: an old one, so that the notice can be seen there. */
 const PREVIEW_VERSION = "0.5.3-personal.28";

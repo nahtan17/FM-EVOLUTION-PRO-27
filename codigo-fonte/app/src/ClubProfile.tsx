@@ -10,6 +10,7 @@ import { InfoTip } from "./InfoTip";
 import { LeaguePrizesGroup } from "./LeaguePrizes";
 import { SponsorEditor } from "./SponsorEditor";
 import { ClubExtras } from "./ClubExtras";
+import { QuickRecipes } from "./QuickRecipes";
 import { ClubSupporters } from "./ClubSupporters";
 import {
   appText,
@@ -218,6 +219,7 @@ function ClubBody({ details, version, panel }: { details: ClubDetails; version:n
         </dl>
       </section>
       <ClubExtras club={details.uid} version={version} group="overview" seasonTickets={details.seasonTickets} socialMedia={details.socialMedia} />
+      <QuickRecipes entity="club" />
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { MoveButton } from "./MoveDialog";
 import { ClubLogo, NationFlag, PersonFace, PICTURE_SIZE, WithPicture } from "./Picture";
 import { FEET, GOALKEEPING, HIDDEN, isGoalkeeper, MENTAL, PHYSICAL, TECHNICAL } from "./playerAttributes";
 import { PlayerRoleGuide, roleImportance, usePlayerRoleGuide } from "./ProfileRoleGuide";
+import { QuickRecipes } from "./QuickRecipes";
 import { PositionFreeze, PositionPitch, PositionRatings } from "./PositionPitch";
 import { PermanentDialog } from "./PermanentDialog";
 import { RecallDialog } from "./RecallDialog";
@@ -186,6 +187,7 @@ export function PlayerProfile({ player, version, onClose, onBack, comparison }: 
             {(tab === "general" || tab === "technical") && <AttributeActions entity="player" details={details} />}
           </div>
         )}
+        {tab === "general" && <QuickRecipes entity="player" />}
         <ProfileBody details={details} tab={tab} role={roleGuide.selected} />
         <div className="player-names-section" hidden={tab !== "general"}>
           <PlayerNames player={{ uid: info.uid, name: info.name }} />

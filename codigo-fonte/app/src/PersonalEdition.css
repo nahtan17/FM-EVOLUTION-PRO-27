@@ -189,3 +189,22 @@ tbody tr.selected, tbody tr[aria-selected="true"] { background: var(--accent-sof
 .club-summary-strip > div { display: grid; gap: 3px; justify-items: end; }
 .club-summary-strip span { color: var(--muted); font-size: 11px; }
 .club-summary-strip strong { font-variant-numeric: tabular-nums; }
+
+.quick-recipes {
+  margin-top: 0.75rem;
+}
+.quick-recipes-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+.quick-recipes-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.quick-recipes-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}

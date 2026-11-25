@@ -1,6 +1,6 @@
 import type { InputState } from "./editDraft";
 import { positionLabel } from "./labels";
-import { estimateAbility } from "./recommendedAbility";
+import { estimateAbility } from "./recommendedAbilityModel";
 import type { PlayerDetails } from "./types";
 import { useEditSession } from "./useProfileEditing";
 
