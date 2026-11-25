@@ -1,0 +1,29 @@
+.club-care{border:1px solid var(--border);border-left:3px solid var(--accent);background:var(--panel);border-radius:5px;padding:11px 13px;margin:12px 0;display:flex;flex-direction:column;gap:7px}
+.club-care label{display:flex;align-items:center;gap:8px;font-weight:650;color:#e4ecfa}.club-care input{accent-color:var(--accent);width:16px;height:16px}.club-care p{margin:0}.club-live{color:#75d7af;font-size:12px}
+.club-tools{padding:12px 16px;overflow:auto}.club-tools>p{max-width:1000px;line-height:1.6}.club-toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}.club-toolbar h3{margin:0 auto 0 0}.club-toolbar label{display:flex;align-items:center;gap:8px}.club-toolbar select{background:var(--field);color:#ecf2ff;border:1px solid var(--border-strong);border-radius:4px;padding:6px}
+.club-tactics-grid{display:grid;grid-template-columns:minmax(150px,.7fr) 1fr 1fr;gap:15px 20px;border:1px solid var(--border);border-radius:5px;padding:16px;background:var(--panel);font-size:12px}.club-area{display:contents}.club-area>span{align-self:center}.club-meter{display:flex;gap:10px;align-items:center;min-width:75px}.club-meter>div{flex:1;height:12px;background:var(--field);border-radius:3px;overflow:hidden}.club-meter span{display:block;height:100%;background:var(--accent)}.club-area .club-meter:last-child span{background:#22a28e}.club-meter output{font-size:12px;width:36px;text-align:right;font-variant-numeric:tabular-nums}.club-tools> .club-meter{padding:12px;background:var(--panel);border:1px solid var(--border);border-radius:4px}
+.club-bonding-weeks{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.club-bonding-weeks article{background:var(--panel);border:1px solid var(--border);padding:12px;border-radius:5px}.club-bonding-weeks h4{margin:0 0 8px}.profile-tabs{overflow-x:auto}.profile-tab{white-space:nowrap}
+@media(max-width:1000px){.club-tactics-grid{gap:12px 10px;padding:10px;grid-template-columns:minmax(130px,.7fr) 1fr 1fr}}
+.transfer-list{overflow:auto;max-height:360px;min-height:80px}.transfer-list tr[tabindex]{cursor:pointer}.transfer-list tr.selected{background:var(--hover)}.transfer-list td{white-space:nowrap}.transfer-form{margin-top:18px;border-top:1px solid var(--border);padding-top:12px}.transfer-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}.transfer-fields label{display:flex;flex-direction:column;gap:6px;font-size:12px}.transfer-fields input,.transfer-fields select,.transfer-center .club-toolbar>input{border:1px solid var(--border-strong);background:var(--field);color:#edf3ff;border-radius:4px;padding:7px}.transfer-fields input:disabled,.transfer-fields select:disabled{opacity:.5}.transfer-preview{max-width:700px}
+.club-extra-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:9px 18px;padding:8px}.club-extra-fields label{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px}.club-extra-fields input,.club-extra-fields select{min-width:70px;width:140px;background:var(--field);color:#edf3ff;border:1px solid var(--border-strong);border-radius:3px;padding:5px}.club-extra h4{margin:12px 8px 0}.club-extra>.club-toolbar,.club-extra>p{margin:8px}.club-finance-tabs{display:flex;gap:5px;padding:10px;border-bottom:1px solid var(--border)}.club-finance-tabs button[aria-selected=true]{background:var(--accent-soft);color:white}.squad-ratings{padding:9px 12px;border:1px solid var(--border);background:var(--panel);border-radius:4px;margin:10px 0}.squad-ratings p,.squad-ratings .club-toolbar{margin:5px 0}.squad-rating{display:inline-block;min-width:42px;padding:3px 6px;border-radius:4px;background:#343942;color:#f0f2f8;font-weight:650;text-align:center}.squad-rating.good{background:#537018;color:white}
+
+.club-extra-fields .attendance-field{grid-column:1 / -1}
+
+.club-finance-tabs { flex-wrap: wrap; }
+.club-records .club-toolbar h3 { margin: 0; }
+.club-records .transfer-fields output { min-height: 36px; padding: 8px 0; }
+.club-records .transfer-fields input[type="checkbox"] { width: 18px; height: 18px; margin: 8px 0; }
+.club-statement-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 265px), 1fr)); gap: 16px; align-items: start; }
+.club-statement-tables caption { text-align: left; padding: 10px; font-weight: 650; }
+.club-statement-tables tfoot { border-top: 1px solid var(--border); }
+.squad-filters { margin-bottom: 10px; }
+.squad-contract-soon { color: #f1c56c; white-space: nowrap; }
+
+.transfer-filters { margin: .4rem 0 .7rem; }
+.transfer-filters .club-toolbar { margin-top: .45rem; }
+.transfer-fields small { line-height: 1.35; }
+
+.club-care-fitness { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.club-care .club-care-fitness label { flex-wrap: wrap; color: var(--text); }
+.club-care .club-care-fitness input[type="number"] { width: 7em; height: auto; }
+.club-care-fitness input[aria-invalid="true"] { border-color: var(--danger); }

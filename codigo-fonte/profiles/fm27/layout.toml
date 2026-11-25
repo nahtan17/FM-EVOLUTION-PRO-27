@@ -1,0 +1,716 @@
+# Field offsets inside FM27 objects (heap data owned by game_plugin.dll).
+#
+# Offsets are the same for every storefront build of a game version, so they live
+# apart from the per-build addresses in the build profiles next to this file.
+# First mapped on Steam by fm-editor (https://github.com/barak14/fm-editor,
+# GPL-3.0-or-later); verified on the Game Pass build 0.9.2355.0 with Lionel Messi
+# (UID 7458500) and Erling Haaland (UID 29179241) unless noted otherwise.
+edition = 27
+
+[player]
+uid = 0x294               # u32
+full_name = 0x2C8         # FM string pointer; may be null
+first_name = 0x2D8        # name-table entry pointer
+last_name = 0x2E0         # name-table entry pointer
+common_name = 0x2E8       # name-table entry pointer; null when the player has none
+date_of_birth = 0x310     # u16 day of year (low 9 bits) + u16 year
+current_ability = 0x264   # u16, 1..200
+potential_ability = 0x266 # i16, 1..200; negative values are ranges
+nation = 0x2F0            # nation pointer
+relations = 0x300         # pointer to the record of his relations; as on macOS, 0x40 further (checked on Steam)
+team = 0x130              # team pointer; the club hangs off the team
+
+# The person block starts here in plain players. Player-coaches carry an extra
+# block in front of it, so every field from here on sits 0xF8 further for them.
+person_block = 0x288
+person_block_shifts = [0x0, 0xF8]
+# u8 of flags, 0x19 into the person block as on macOS: 0x10 is set for a woman. On the Steam save
+# (1 July 2027), with women's football, it was set for all 6,434 players of women's clubs, for none
+# of the 26,948 of men's clubs, and for 1,956 of the 6,887 without a club. The Game Pass save holds
+# no women's football: the flag was set for none of its 59,284 players, while the byte's other flags
+# read as on the Mac (0x02 for about half the players, 0x40 and 0x80 for a few hundred).
+gender = 0x2A1
+# u8 of flags, the byte before the gender's: 0x08 is set for a player the game made, as at a youth intake (see
+# crates/fmlibre-core/src/youth_intake.rs). On the Game Pass save of 16 January 2028 it was set for 1,783 players, 16.2
+# years old on average, and they were exactly the players with a UID from 2,002,068,314 up, the ones the game numbered
+# itself: every club's intake (Fenerbahçe's eleven of 11 March 2027) and the youth candidates it let go.
+made_by_game = 0x2A0
+# Pointer to the city he was born in (db::CITY, see [city]): Istanbul for Osman Sütlü. 1,948 of the save's 10,837
+# players have none, all of them from the game's database; every player the game made has one.
+city_of_birth = 0x308
+
+height = 0x22E            # u16, centimetres
+# Live values, 0..10000 (100.00%). Checked against the game's own words on the test save:
+# Matthijs de Ligt, injured, 3500 sharpness ("lacking match fitness"); Bruno Fernandes 6700
+# ("gaining match fitness"); both "fresh" at 8980 and 10000 condition.
+match_sharpness = 0x258   # u16; 3500 or above, but players the game creates start lower
+condition = 0x25C         # u16, the energy the game shows
+# i16, how worn out he is by playing, which rest takes away; FMRTE calls it jadedness. Found from
+# FMRTE's readings on the Game Pass save (27 July 2026): Kylian Mbappé -500, Arda Güler -274,
+# Amad -315. The game keeps it at -500 or above: 1,587 players, rested over the summer, sit at
+# -500; the most on that save, early in the season, was 252.
+jadedness = 0x25A
+# u8, 1..20: morale, which the game shows as overall happiness ("Genel Mutluluk"). Arda Güler
+# read "Memnun" (content) at 10, "Biraz Mutlu" (slightly happy) at 11 and "Aşırı Mutlu"
+# (extremely happy) at 20; FM Live Editor 27's morale words for 15 Manchester United players
+# fell in line with it (Okay 10, Fairly Good 11, Quite Good 12, Good 13, Really Good 14, Very
+# Good 15). The byte at 0x1F1 (0..20) moves with it but is not what the game shows; it is
+# left alone.
+morale = 0x26C
+# u64, his traits (preferred moves): bit n is the n-th of FMRTE's list, read row by row (left, right). Read against
+# FMRTE for Messi (bits 7 10 16 17 19 20 49 51), Olise, Gvardiol, Kane and Güler (17 19 22 31 58) on the Game Pass
+# save. Bits 62 and 63 are not in FMRTE's list as shown; Kane has bit 62.
+traits = 0x348
+# Pointer to the player's injury record, null for a player who was never injured. The record
+# starts with the list (begin, end, capacity) of his current injuries; a player who has got
+# over his injuries keeps the record with an empty list.
+injuries = 0xF8
+# i32, pounds: the transfer value. The game shows it in euros (about 1.166 a pound), as a range starting at it while
+# the club's scouts do not know him well; 300,000,000 is "Not for Sale". Read on the Steam save (15 August 2027):
+# Haaland 226,496,256 (€264M - €287M), Pinto Pedrosa 21,647,602 (€25M - €30M), Pizzignacco 6,355 (€2.5K - €12K).
+transfer_value = 0x234
+asking_price = 0x238      # i32, pounds; -1 when not set
+home_reputation = 0x25E   # u16
+current_reputation = 0x260
+world_reputation = 0x262
+international_caps = 0x3BC  # u16
+international_goals = 0x3BE # u16
+u21_caps = 0x3C0          # u8 (Messi: 18 caps, 14 goals)
+u21_goals = 0x3C1         # u8
+contract = 0x330          # contract pointer
+# 15 ratings, 1..20: GK, SW, DL, DC, DR, DM, ML, MC, MR, AML, AMC, AMR, ST, WBL, WBR
+positions = 0x150
+# 8 ratings, 1..20: adaptability, ambition, loyalty, pressure, professionalism,
+# sportsmanship, temperament, controversy
+personality = 0x2F8
+
+# u8, raw 0..100, shown in game as (raw + 2) / 5
+[player.attributes]
+corners = 0x17A
+crossing = 0x15F
+dribbling = 0x160
+finishing = 0x161
+first_touch = 0x175
+free_kicks = 0x182
+heading = 0x162
+long_shots = 0x163
+long_throws = 0x17D
+marking = 0x164
+passing = 0x166
+penalty_taking = 0x167
+tackling = 0x168
+technique = 0x176
+aggression = 0x18C
+anticipation = 0x170
+bravery = 0x18A
+composure = 0x193
+concentration = 0x194
+decisions = 0x171
+determination = 0x192
+flair = 0x179
+leadership = 0x187
+off_the_ball = 0x165
+positioning = 0x173
+teamwork = 0x17B
+vision = 0x169
+work_rate = 0x17C
+acceleration = 0x181
+agility = 0x18D
+balance = 0x189
+jumping_reach = 0x186
+natural_fitness = 0x191
+pace = 0x185
+stamina = 0x184
+strength = 0x183
+aerial_reach = 0x16B
+command_of_area = 0x16C
+communication = 0x16D
+eccentricity = 0x17E
+handling = 0x16A
+kicking = 0x16E
+one_on_ones = 0x172
+punching = 0x180
+reflexes = 0x174
+rushing_out = 0x17F
+throwing = 0x16F
+consistency = 0x18B
+dirtiness = 0x188
+important_matches = 0x18E
+injury_proneness = 0x18F
+versatility = 0x190
+left_foot = 0x177
+right_foot = 0x178
+
+# Fields of the contract a player's `contract` pointer leads to.
+[contract]
+owner = 0x08              # pointer back to the person block of the player or member of staff it belongs to
+wage = 0x20               # i32, pounds per week
+signed = 0x44             # date
+expires = 0x48            # date
+joined = 0x4C             # date the player joined the club (Messi: 15 July 2023)
+squad_status = 0x54       # u8 (1 star player, 2 important player, 5 impact sub; see docs/recon/fm27-contracts.md)
+listing = 0x57            # u8; bit 0 transfer listed, bit 1 loan listed
+squad_number = 0x5D       # u8; 255 = none
+team = 0x10               # team pointer (the employer, for staff); its club is at team+0x30
+senior_team = 0x18        # the employer's senior team; the same as `team` except for player-coaches
+job = 0x26                # u8 job code (1 player, 16 manager, 20 assistant coach, ...)
+# Lists (begin, end, capacity) of a contract's extras. Read on the Windows Game Pass build with Kylian Mbappé,
+# whose clauses list holds his release clause (859,031,872 pounds, a billion euros) and three bonuses.
+clauses = 0x68            # 8-byte entries: u32 amount (0xFFFFFFFF: none), u16 condition (0xFFFF: none), u16 kind
+competition_bonuses = 0x80 # 32-byte entries: the competition's UID at +0x14, the amount at +0x18
+# Checked against FMRTE's contract page for Kane, Haaland, Alex Scott, Olise and Mbappé (Game Pass, 6 Sep 2026):
+# loyalty bonus 33,401 / 43,634 / 20,882 / 37,798 / 50,098, happiness 71 / 60 / 60 / 60 / 80 and playing time
+# happiness 4 / 16 / 27 / 8 / 30. Olivier Boscagli's happiness reads -4.
+loyalty_bonus = 0x38      # i32, pounds per week
+happiness = 0x5A          # i8
+playing_time_happiness = 0x5C # i8
+# Pointer to the record of the player's reasons to be unhappy (FMRTE's "Unhappiness"), null for a player who never had
+# one: a u64 count, then that many pointers to 28-byte entries (start and end date, what it is about, the motive at
+# +0x16, the type at +0x18: 1 concerned, 2 internal). An entry stays listed, with an end date, after it is over.
+# Thibaut Courtois: 1 entry from 17 August 2026, motive 0x39E ("doesn't believe Dean Huijsen deserves the playing
+# time he wants"); Malick Yalcouyé: left out of the UEFA Conference League squad from 4 September (0x254, internal).
+unhappiness = 0x30
+# u8, the kind of contract, as the game's contract screen names it (English UI, Steam build 26340721): 0 Part-Time,
+# 1 Full-Time, 2 Amateur, 3 Youth, 4 Non-Contract, 10 Senior Minimum Salary and 11 Senior (MLS). On one save of 33,670
+# players: 23,506 full-time, 4,472 youth, 1,820 part-time, 1,043 amateur, 932 non-contract (see
+# docs/recon/fm27-contracts.md).
+contract_type = 0xC3
+# Contracts (db::FULL_CONTRACT) take 200 bytes, packed one after another in the slots of the game's pool of them (see
+# [pool]). Across the 12,824 of the Game Pass save of August 2027: +0x28 is zero in 11,392 and holds a pointer in 159,
+# +0x98 one in 204 and +0xA0 one in 43; a contract the editor makes for a free agent has none there.
+size = 0xC8
+cleared = [0x28, 0x98, 0xA0]
+
+# The game keeps the objects of many classes, contracts among them, in pools: statics of game_plugin.dll that hand out
+# slots of one size from chunks (see crates/fmlibre-core/src/object_pool.rs). Offsets from the pool's list of chunks.
+# Read on Game Pass 0.9.2409.0, where 67 pools sat in 128 KiB of the plugin's data and the contracts' had 12,810 +
+# 1,024 slots: 12,824 used, as many as memory held contracts, and 1,010 free, chained from the first free one.
+[pool]
+chunks = 0x00             # (begin, end, capacity) of pointers to the chunks
+first_free = 0x18         # pointer to the first free slot, null for none; a free slot's first 8 bytes point at the next
+free = 0x20               # u32 slots free
+used = 0x24               # u32 slots holding an object
+slot_size = 0x28          # u32 bytes per slot
+first_chunk = 0x2C        # u32 slots of the first chunk, as many as the save loaded needed
+later_chunks = 0x30       # u32 slots of each later chunk
+
+# The game's tables of first, last and common names, which players and staff point at entries of (see
+# docs/recon/fm27-names.md and crates/fmlibre-core/src/names.rs). An entry takes 24 bytes, packed in the slots of one of
+# the game's pools: the text (an FM string pointer) first, then the u32 id the save knows it by, which is its place in
+# the table's list by id, the u16 nation it was made for (65535 for none) and the u16 weight the game picks it by for a
+# new person of that nation (0 for one it never picks). The lists by id are (begin, end, capacity) the game keeps
+# behind pointers in the plugin's writable data, 0x38, 0x30 and 0x28 bytes before the players' list. Read on Game Pass
+# 0.9.2435.0 (save of January 2028): 321,748 first, 645,054 last and 96,628 common names, each list with room for 32
+# more, and every entry at the place its id says.
+[names]
+lists_before_players = [0x38, 0x30, 0x28]
+entry_size = 0x18
+id = 0x08
+nation = 0x0C
+weight = 0x0E
+
+# Static data in game_plugin.dll next to the entity arrays. Offsets are relative to
+# the players (begin, end) pair: the cluster moves as one block between builds.
+[cluster]
+# Current in-game date: u16 day of year (flags above bit 8) + u16 year. Confirmed
+# by the game's UI strings ("Cts 18 Tem", "18 Temmuz 2026") in the test save.
+# The November 2026 update (Game Pass 0.9.2409.0, Steam build 26340721) leaves it
+# unset (1 January 1900) with a save loaded: their build profiles name the date's
+# own variable (`current_date`), which wins.
+current_date = 0x848
+
+# Non-player staff. Offsets from fm-editor's FM27 notes (Steam), checked on the Game
+# Pass build with the witnesses listed in docs/recon.
+[staff]
+uid = 0x10C               # u32 staff id
+full_name = 0x140         # FM string pointer; often null
+first_name = 0x150        # name-table entry pointer
+last_name = 0x158         # name-table entry pointer
+common_name = 0x160       # name-table entry pointer
+nation = 0x168            # nation pointer
+personality = 0x170       # 8 ratings, same order as for players
+date_of_birth = 0x188     # date
+contract = 0x1A8          # contract pointer (same record as a player's contract)
+home_reputation = 0xD4    # u16
+current_reputation = 0xD6
+world_reputation = 0xD8
+current_ability = 0xDA    # u16
+potential_ability = 0xDC  # u16
+# The person block starts here (a contract points back at it). In the human
+# manager's object every field from here on sits 0x340 further: id, names, nation,
+# personality, birth date and contract. Attributes, reputation and CA/PA stay put.
+person_block = 0x100
+person_block_shifts = [0x0, 0x340]
+# u8 of flags, 0x19 into the person block as for players: 0x10 is set for a woman. On the Game Pass
+# save it was set for 851 of the 29,512 staff, all women (Carolina Morace, Ria Ledwaba, Isha Johansen);
+# on the Steam save for 2,548 of 25,776 (Emma Hayes, Sarina Wiegman, Jill Ellis), and not for the 846
+# men who work for women's clubs.
+gender = 0x119
+
+# u8, raw 0..100, shown as (raw + 2) / 5
+[staff.attributes]
+attacking = 0x32
+defending = 0x33
+fitness = 0x34
+goalkeeping = 0x2B
+possession = 0x35
+tactical = 0x37
+technical = 0x36
+set_pieces = 0x43
+determination = 0x1D
+motivating = 0x2F
+people_management = 0x2E
+judging_ability = 0x2C
+judging_potential = 0x2D
+judging_staff = 0x42
+negotiating = 0x41
+tactical_knowledge = 0x31
+data_analysis = 0x3C
+physiotherapy = 0x30
+sports_science = 0x3F
+coaching_player = 0x2A
+dirtiness_allowance = 0x38
+versatility = 0x3B
+judging_team_data = 0x3D
+presenting_data = 0x3E
+
+# u8 ratings stored as shown, 1..20
+[staff.ratings]
+working_with_youngsters = 0x1C
+authority = 0x14
+tactical_attacking = 0x10
+depth = 0x23
+directness = 0x13
+flamboyancy = 0x24
+flexibility = 0x25
+free_roles = 0x15
+marking = 0x17
+offside = 0x18
+pressing = 0x1A
+sitting_back = 0x20
+tempo = 0x28
+use_of_playmaker = 0x21
+use_of_substitutions = 0x22
+width = 0x29
+buying_players = 0x1E
+hardness_of_training = 0x26
+mind_games = 0x1F
+squad_rotation = 0x27
+business = 0x11
+interference = 0x16
+patience = 0x19
+resources = 0x1B
+
+# One current injury, from a player's list of them (see `injuries` above).
+[injury]
+kind = 0x08               # pointer to the kind of injury; its name, an FM string, is at kind+0x18
+team = 0x18               # the team he was with when it happened
+started = 0x20            # date
+longest = 0x28            # u16 days from `started` until he is back at the latest
+shortest = 0x2A           # u16 days until he is back at the soonest
+kind_name = 0x18
+
+# A person's relations: the list of 16-byte entries the record of his `relations` starts with. Each points at a
+# nation, club, person or competition and says how he is tied to it. Read on the Mac Steam build; on the Windows
+# Steam and Game Pass builds Kenan Yıldız, Jamal Musiala and Achraf Hakimi read the same entries as on the Mac.
+[relation]
+target = 0x00             # pointer to the nation, club, person or competition
+target_kind = 0x0A        # u8: 1 a club, 3 a person, 7 a competition, 8 a nation
+relation = 0x0B           # u8: 9 a nationality, 70 trained in a nation, 72 trained at a club, 109 no work permit needed
+count = 0x08              # u16: a count some relations use; of 109, the days it has left
+value = 0x0C              # u8: of a training, the homegrown rule it meets
+size = 0x10
+
+# A player's cohesion with each club and nation he has been at, as on macOS: the second list of the same record,
+# 8-byte entries. FM27 Editor (https://github.com/Jackhamerp24/Football-Manager-27-Editor, GPL-3.0) found it here.
+# Checked on Game Pass 0.9.2409.0 (#140): the club entries read 78 to 100, and two players who had joined two days
+# earlier already had one, at 2.
+[cohesion]
+list = 0x18               # the list (begin, end, capacity) in the record of relations
+size = 0x08
+index = 0x00              # i32: the club or nation the entry is for, by its index
+kind = 0x04               # u8: 1 a club, 2 a nation
+value = 0x05              # i8: the cohesion, 1..100
+club_index = 0x08         # i32 in the club object: the index its entries name it by
+
+# Who a reason to be unhappy is about: what an entry of the record a contract's `unhappiness` points at says besides
+# its dates, motive and kind. Found on the macOS Steam build (see layout-macos.toml) and read on Game Pass
+# 0.9.2435.0, where the entries are laid out alike and the groups form the same way. The entries of categories 19
+# and 20 are those teammates hold about one player, and name him by the game's id of the person; once he has no
+# entry of his own, the game ends theirs within two days. The two values the game words some reasons by are placed as
+# found on the macOS Steam build (see layout-macos.toml), and as the game's code reads them on Windows Steam 26577676:
+# the caller that words an entry passes its +0x16 (motive), +0x18 (kind), +0x08, +0x0C, +0x14 (wording) and +0x1B
+# (flags), and the cases of 648 to 653 compare the kind as a signed byte (cmp r8b, 5; setl), 255 being -1.
+[concern]
+about = 0x08              # in an entry: i32, the game's id of the person it is about; -1 for none
+category = 0x19           # in an entry: u8, the category of its motive
+wording = 0x14            # in an entry: i16, what the sentence of some motives depends on
+flags = 0x1B              # in an entry: u8, flags
+player_person = 0x290     # in a player: u32, the game's id of the person
+
+# A player's current bans sit in the same record as his injuries: after the list of his
+# current injuries, a list of his absences, 32-byte entries. Other absences, such as a
+# call-up, are listed with them; a ban has 0xFFFF at `marker`, they have 0. Read on the
+# Mac Steam build, whose records are laid out as here; on the Windows builds Elliot Watt reads
+# his two bans (1 and 4 matches), among 17 banned players on the Steam save and 48 on the Game
+# Pass one.
+[ban]
+list = 0x18               # in the record: the list (begin, end, capacity) of absences
+started = 0x10            # date the ban began
+marker = 0x16             # u16, 0xFFFF for a ban
+matches = 0x1C            # u8, matches left to miss
+
+# The retirements the game has planned (FMRTE's "Retire Date"), which its retirement manager (RETIREMENT_MANAGER)
+# keeps. Read on the Game Pass save (6 September 2026), where the manager listed 27, among them Cristiano Ronaldo on
+# 30 June 2027 and Daniel Wass on 1 July 2027 as FMRTE shows; nothing but the manager's two lists points at an entry.
+# An entry is 24 bytes: the person's id, a club's (-1 for a free agent), two dates, the date he retires and flags.
+# The static pointer to the manager is not at the same distance from the arrays on Game Pass and Steam: the build
+# profiles place it.
+[retirement]
+planned = 0x30           # in the manager: (begin, end, capacity) of pointers to the entries
+by_person = 0x90          # in the manager: (begin, end, capacity) of 16-byte entries: u32 person id, 4 spare bytes, pointer; sorted by id
+person = 0x00             # in an entry: u32 person id
+date = 0x0C               # in an entry: the date he retires
+player_person = 0x290     # in a player: u32, the game's id of the person (Ronaldo 0x0A30, Wass 0x0E69)
+
+# The game's one object of the class game_plugin::GAME_UI, made when the game starts and kept until it quits: the
+# build profiles place a static of the plugin that points at it (`game_ui`). It counts the saves the game has loaded
+# since it started: loading a save adds one, saving does not, nor does starting a new game (issue #122, read on Steam
+# build 26340721; 1 on Game Pass 0.9.2409.0 after the first load). The editor reads it to tell whether the game has
+# loaded a save since the editor read its lists.
+[game]
+class = "game_plugin::GAME_UI"
+loads = 0x100             # u64, the saves loaded since the game started
+
+# What a human manager has picked for his club, laid out as on macOS (see layout-macos.toml): the match engine's
+# prepared tactics, objects whose 26 slots hold the game's person ids (a player's `player_person`), the starting
+# eleven in the order of the formation's positions, then the substitutes; an empty slot holds 0xFFFFFFFF. Each object
+# also keeps a list (begin, end, capacity) at `list`. Read on the Game Pass save (15 September 2026): of the 21 objects
+# of the class, three held Manchester United's selection, the same 20 players in each (one of them in another order);
+# four held Manchester City's, four Millwall's, and nine were empty. The last one sat on a thread's stack, with no list.
+[selection]
+class = "simatch::PREPARED_TACTICS_CREATOR_ARRAY"
+list = 0x08
+slots = 0x28
+count = 26
+player_person = 0x290
+
+# The tactic block the first entry of a selection's list points at (see docs/recon/fm27-tactics-and-value.md). Read
+# on the Steam save (15 August 2027) with Monza's tactic, against the game's tactics screen in three formations and
+# role sets: the eleven in-possession slots, then the eleven out-of-possession ones, in the selection's order, each
+# 0x48 bytes with the role's mask at +0x10. The game rewrites the block, or builds a new one, when the manager leaves
+# the tactics screen.
+[tactic]
+in_possession = 0x148
+out_of_possession = 0x468
+slot_size = 0x48
+role = 0x10               # in a slot: the u64 role mask
+style = 0x100
+
+# The tactics each human manager keeps for each of his teams, as on macOS (see layout-macos.toml and
+# tactical_areas.rs), which the game reads to tell how well the players know the tactic in use. The build profile's
+# tactics_manager (TACTICS_MANAGER) leads to an object listing one object per human manager; each starts with a map
+# from a team's id to its tactics. The map is MSVC's: it holds a head node, whose +0x08 is the root, and a node keeps
+# its left child at +0x00 and its right at +0x10 (see tree.rs). A team's tactics hold a
+# simatch::PREPARED_TACTICS_CREATOR_ARRAY at +0x1008, whose list of tactic blocks is `tactics` and whose byte after
+# it the index of the one in use.
+[tactics]
+tree = "msvc"
+managers = 0x20           # (begin, end) of pointers, one per human manager
+teams = 0x00              # in one: the map's pointer to its head node
+key = 0x20                # in a node: u32, the team's id
+value = 0x28              # in a node: the team's tactics
+team_id = 0x08            # in a team: u32
+tactics = 0x1010          # in the team's tactics: (begin, end) of pointers to tactic blocks
+current = 0x1028          # in the team's tactics: i8, the index of the one in use
+instructions = 0xE0       # in a tactic: two u64 words
+
+# How well the players know a tactic, as on macOS (see layout-macos.toml and familiarity.rs): a player's record, laid
+# out as there but pointed at 8 bytes further on, and the history of training the training manager (TRAINING_MANAGER,
+# the build profile's training_manager) keeps for each human manager's players, in a map from a person's id that is
+# MSVC's too.
+[familiarity]
+tree = "msvc"
+record = 0x100            # in a player: pointer to his record
+area_step = 0x20          # in the record: the six lists of options, (begin, end, capacity) each
+area_index = 0x18         # in a list's header: u8, its area
+shapes = 0xC0             # in the record: the list of shapes, (begin, end, capacity)
+managers = 0x40           # in the training manager: (begin, end) of pointers, one per human manager
+club = 0x78               # in one: pointer to his club
+players = 0x60            # in one: the map of players' pointer to its head node
+person = 0x20             # in a node: u32, the person's id
+history = 0x28            # in a node: (begin, end, capacity) of 12-byte entries
+player_person = 0x290     # in a player: u32, the person's id, as [retirement] and [selection] read it
+
+# A player on loan has a second contract, of its own class, with the team he is on loan to. His `record` (right after
+# his contract pointer, and shifted with it for player-coaches) points at a record of his other contracts, whose first
+# field points at the loan contract. Only he points at the record, and only the record points at the loan contract.
+# The loan contract is laid out as [contract] up to the squad number: the owner, the team he is on loan to (twice), his
+# wage, from (`signed`), until (`expires`), joined, the squad status and number at that club. Read on the Game Pass
+# save (17 September 2026): André Onana, on loan from Manchester United to Trabzonspor from 29 June 2026 to 30 June
+# 2027, number 24 there.
+# The record is 32 bytes: the loan contract, then contracts with a club's B team (`db::B_CLUB_CONTRACT`) at 0x08 and
+# 0x18, and at 0x10 a basic or full contract (a few player-coaches). Of 5,637 records, 3,598 held a loan contract and
+# 2,189 a B team's contract at 0x08. When the game ended the loans of Onana and Bayındır, whose records held nothing
+# else, it left them without a record (null at 0x338).
+[loan]
+record = 0x338
+contract = 0x00
+others = [0x08, 0x10, 0x18]
+class = "db::LOAN_CONTRACT"
+
+# The loan's terms, as the game's Loan Club tab shows them, past the fields the loan contract shares with a contract.
+# Mapped by RootTourist on the Steam build 26340721 against 17 loans in the English UI (PR #101): `flags` bit 0 "Can
+# play against own team", bit 1 "Can play in cup matches", bit 2 "Can be recalled", bit 12 "Loan cannot be terminated"
+# (bits 3, 8, 13 and 15 also occur, and the game shows nothing for them); `option_fee` the "Optional Future Fee";
+# `monthly_fee` the "Monthly playing fee", `unused_fee` the "Unused Monthly Fee". The amounts are pounds, -1 for none.
+# On the Steam save of 15 August 2027, of 371 loans 113 could not be recalled and 94 could not be terminated (71
+# neither): Anton Kade's, from FC Augsburg to Liverpool, holds flags 0x1002 and an option fee of 23,245,368.
+[loan.terms]
+flags = 0xB0
+option_fee = 0xC0
+monthly_fee = 0xCC
+unused_fee = 0xD0
+
+[team]
+club = 0x30               # club pointer
+# u8, the kind of team: on the test save 0 for the first team, 10 for the under-21s and
+# 12 for the under-18s (Manchester United).
+kind = 0x28
+age_limit = 0x2C          # u8, the oldest its players may be (21, 18); 100 for no limit
+# Player pointers as (begin, end, capacity): the players under contract with the team
+# (those out on loan too) and the players on loan to it. A player is always in the list
+# of the team he plays for (player `team`).
+players = 0x38
+# Pointers to the person blocks of the captain and the vice-captain; null when the team has
+# none. Manchester United's are Bruno Fernandes and Lisandro Martínez, as the game shows.
+captain = 0x88
+vice_captain = 0x90
+reputation = 0xA8         # u16, 0..10000; the club's reputation lives on its senior team
+# The team's manager: a pointer to his object (not his person block), null for none. Read on the Steam save of 19
+# August 2027 (probe `staff-places --team-offset 0x80`): it held a manager (job 16) under contract with that team at
+# 2,048 senior teams and at 384 youth and reserve teams, and at six small clubs a chairperson, owner, president or
+# director of football who runs the team; null at 21,549 senior teams, 10 of them of clubs whose leagues are played
+# (Parma, Exeter City), as the game leaves a club between two managers. A team takes 0xB8 bytes, one after another
+# in memory, so what lies 0xB8 on is the next team's.
+manager = 0x80
+# The league the team plays in this season: a competition pointer, null for none (a senior team outside the leagues,
+# or a club the game holds only for its history). Read on the Mac (Steam build 26577676, 14 July 2027), whose team
+# layout is the same: 22,908 of 23,606 clubs' senior teams point at one of 2,197 competitions. The Premier League holds
+# Tottenham; Aston Villa, relegated, are in the Championship, and Derby County, promoted, in the Premier League. 0x60
+# holds the league of the season before (the Premier League for Aston Villa, the Championship for Derby).
+competition = 0x50
+
+# The game's allocator hands out blocks in size classes, without headers. Measured on
+# the buffers of the teams' player lists (probe `squads`): a list of n pointers sits in
+# the smallest of these blocks that holds 8 * n bytes, and the bytes after its end up to
+# the block's end are zero. Only sizes from just above the first value to the last one
+# are relied on; smaller and larger lists were not measured well enough.
+#
+# Strings are not read here yet. On the Mac their blocks come in steps of 8 bytes (see
+# layout-macos.toml); 8 is the safe choice whatever the steps are here: a block of steps
+# of 8 always lies within the block of steps of 16 it falls in, so a name written over an
+# old one of the same block of 8 never runs past the game's block. With steps of 16 the
+# editor would write a name of 24 to 31 bytes over one of 16 to 23 if the game's block
+# were one of 40, into the next string's header. Probe `allocators` shows the steps.
+#
+# The largest block the game's allocator hands out was read on the Mac (4,096 bytes; it
+# gets larger ones from the system and gives them back to free()); it runs the same code
+# here. A list is grown into memory of the editor's own up to it, in a block of its class,
+# or past the classes above, of the next power of two, which holds the class whatever it is.
+[heap]
+block_sizes = [144, 160, 192, 224, 256, 288, 320, 384, 448, 512]
+largest_block = 4096
+string_step = 8
+
+# Checked on Tottenham Hotspur (UID 728) in the Game Pass build, against values
+# fm-editor witnessed on Steam (founded 1882, 50,000 season tickets, 6.8M social
+# followers, supporter traits 18/14/7/14/7/14, ticket price £65, corporate 20,
+# reputation 7650).
+[club]
+uid = 0x0C                # u32
+name = 0xC0               # full name, FM string pointer
+short_name = 0xC8         # FM string pointer
+women = 0xB9              # u8: 0 men's club, 1 women's club
+teams = 0x18              # pointer to the club's team pointers; the first is the senior team
+info = 0x100              # info record pointer
+finance = 0x150           # finance record pointer
+# The club's staff by department, each a (begin, end, capacity) list of pointers. Read on macOS, whose
+# club layout is the same, and checked on the Windows Steam and Game Pass builds with Coventry City's coach
+# Chris Jones; a move checks the lists hold the member of staff before it writes.
+medical_staff = 0x60      # physios, doctors, sports scientists, their heads, some fitness coaches
+coaching_staff = 0x78     # coaches, assistants, goalkeeping and fitness coaches, analysts, youth managers
+scouting_staff = 0x90     # scouts, the chief scout, recruitment analysts, loan managers, technical directors
+# The club's director of football: a pointer to his object (not his person block), null for none. On the Game Pass
+# save of 17 Nov 2026 it was null at 30,831 of 31,227 clubs, and held each of the 362 members of staff whose job is
+# director of football (job 10), at his own club; at 34 more a manager, director or president who does that job too.
+# A director of football is in none of the department lists (350 of 362), so this is how his club holds him.
+director_of_football = 0x148
+# The nation the club is from, as its profile in the game names it: a nation pointer. Read on the Mac (Steam build
+# 26577676, a save of 14 July 2027), whose club layout is the same, over all 23,606 clubs: Tottenham Hotspur, England;
+# Cardiff City, Swansea City and Wrexham, Wales; Derry City, Northern Ireland; FC Vaduz, Liechtenstein; Toronto FC,
+# Canada. Each of those plays in another nation's leagues, which 0xD8 names (England, the Republic of Ireland,
+# Switzerland, the United States); every other club has the same nation at both.
+nation = 0xE8
+
+# A club's stadium (db::STADIUM, 0xC0 bytes), which its senior team points at. Read on the Game Pass build with
+# Manchester United's Old Trafford: capacity 74,879, all of it seated, 74,310 in use, room to grow to 95,285; and
+# checked against all 30,536 stadiums of that save, whose seats never outnumber their capacity and whose expansion
+# ceiling is nearly always at or above it.
+[stadium]
+team_pointer = 0x78       # in the senior team: pointer to the stadium it plays at
+name = 0x40               # FM string pointer
+capacity = 0x7C           # u32
+seating = 0x80            # u32, seats; never above the capacity
+used = 0x84               # u32, the capacity in use when it is limited (Old Trafford 74,310); 0 when it is not
+expansion = 0x8C          # u32, the most it can be expanded to
+owner = 0x90              # pointer to the club that owns it
+
+# A club's sponsorship deals (#114): the club points at a (begin, end, capacity) record whose list holds a pointer per
+# deal, each to an entry of 24 bytes. Read on Windows (Steam build 26340721) on VfB Stuttgart, whose 9 entries are the 9
+# deals of its Sponsorship screen with every amount and end date, and on a Serie BKT club on the Mac (Steam build
+# 26385295), whose deals on the screen match the entries' amounts at the save's rate.
+[sponsorship]
+club_list = 0x130         # in the club: pointer to the record of the list
+entry_size = 24
+start = 0x00              # u16 day of the year (with flags above bit 8), u16 year
+end = 0x04                # the same
+total = 0x08              # u32 pounds, for the whole deal
+per_season = 0x0C         # u32 pounds
+percent = 0x10            # u16: the amount falls by this much on relegation; a kit manufacturer's rises on promotion
+reputation = 0x12         # u16, the club's reputation when the deal was signed
+kind = 0x14               # u8, named as the game's screen does in sponsorship.rs
+
+[club_info]
+season_tickets = 0xC0     # u32
+founded = 0xD8            # u16 year
+social_media = 0xF8       # u32 followers
+supporter_mix = 0x106     # 6 x u8 percentages: hardcore, core, family, fair-weather, corporate, casual
+supporter_traits = 0x114  # 6 x u8, 1..20: loyalty, passion, patience, affluence, temperament, expectations
+training = 0x120          # facilities, u8 1..20
+youth_facilities = 0x12B
+youth_coaching = 0x12C
+youth_recruitment = 0x12D
+
+# Only clubs in the leagues being played have the full finance record; the others
+# use a smaller class, so readers check that these values look sane before use.
+[club_finance]
+balance = 0x0C            # i32 pounds
+transfer_budget = 0x7C4   # i32 pounds
+total_wage_budget = 0x808 # i32 pounds per week
+wage_budget = 0x814       # i32 pounds per week, the spending wage budget
+ticket_price = 0x864      # f32 pounds, average match ticket
+corporate = 0x8A9         # u8 1..20, corporate facilities
+
+[nation]
+uid = 0x0C                # u32 (Argentina: 1649, as graphics packs map its flag)
+name = 0x18               # FM string pointer
+continent = 0xF0          # db::NATION, see docs/recon/fm27-national-teams.md (Windows)
+continent_name = 0x18     # db::CONTINENT, documented by the included FM27 Editor reference
+
+# A city (db::CITY): 0x58 bytes, laid out like a nation up to the name, then the nation it is in. The Game Pass save
+# holds 58,475 of them; Istanbul is 1,301,222, in Türkiye.
+[city]
+uid = 0x0C                # u32
+name = 0x18               # FM string pointer
+nation = 0x20             # nation pointer
+
+# A competition (db::COMP). Its UID sits where clubs and nations keep theirs, and the next u32 holds it again. The
+# names are in the game's language (a German game calls the CAF Champions League "Afrikas Champions League"), so a
+# competition is matched by its UID.
+[competition]
+uid = 0x0C                # u32
+name = 0x40               # FM string pointer
+short_name = 0x48         # FM string pointer
+# The nation whose competition it is: a nation pointer (England for the Premier League; the United States for Major
+# League Soccer, which Toronto FC plays in). Read on the Mac (Steam build 26577676), whose layout is the same.
+nation = 0x60
+
+# The prize money a competition's stages pay (#123: found by RootTourist on the Windows Steam build, checked by
+# Reckbeg on the Mac against the game's Competition Stages screens). A stage played as a league (a league, a league
+# phase, a group) points at its competition and at its settings, which hold the amounts in pounds: a list by final
+# position, the first place first, and the amounts per win, draw and loss. A stage that has not started yet points at
+# the settings it will be played with, whatever their class (a cup stage's are sicomps::CUP_SETTINGS). Nothing else
+# the editor reads leads to them: they are found by their class (see prize_money.rs). Read on the Game Pass save (9
+# August 2027, the Turkish leagues loaded): 315 league stages, 3 future ones and 318 settings, 0x2F0 bytes apart. The
+# Champions League's league phase, not started yet, pays 10,222,480 down to 236,234 by position, 1,803,967 per win and
+# 601,323 per draw, as on RootTourist's save of 2028/29; the Süper Lig pays nothing by position, but 114,699 per win,
+# 57,964 per draw and 1,229 per loss. Whether the game pays from these amounts is not known yet.
+[prize_money]
+stage = "sicomps::LEAGUE_STAGE"
+future_stage = "sicomps::FUTURE_STAGE"
+settings = "sicomps::LEAGUE_SETTINGS"
+competition = 0x70        # in either stage: pointer to its competition
+stage_settings = 0xF0     # in a league stage: pointer to its settings
+future_settings = 0x90    # in a stage that has not started yet: pointer to its settings, of whichever class
+by_position = 0x1E0       # in the settings: (begin, end, capacity) of u32 pounds, the first place first
+win = 0x148               # u32 pounds per win
+win_again = 0x14C         # u32, the same as `win` in every settings seen
+draw = 0x150              # u32 pounds per draw
+loss = 0x154              # u32 pounds per loss
+
+# A nation's national teams (#169, docs/recon/fm27-national-teams.md), read on Game Pass 0.9.2435.0 (a save of January
+# 2028) and on Steam build 26577676 (a save of October 2026). Each nation has two containers
+# (`db::NATIONAL_TEAM_CONTAINER`, 0x898 bytes apart here, 0x8A0 on the Mac), one for its men's teams and one for its
+# women's: 251 of each, 502 in all. A container holds its teams as (begin, end, capacity) of pointers, the senior team
+# first; they are laid out as a club's team ([team]), with the container where a club's team points at its club. What
+# the editor reads of a container sits where it does on the Mac. The nation (`db::NATION`, [nation], 0x200 bytes apart
+# here and 0x208 on the Mac) keeps everything from its capital (+0xE8 here) on 8 bytes earlier than the Mac does, its
+# two containers too.
+[national]
+container_uid = 0x0C          # Italy's men's: 776, the nation's UID; the women's have a UID of their own (2000169632)
+container_teams = 0x18        # Italy's men's on Game Pass: 7 teams, the senior one first, with 23 players
+container_women = 0xB9        # u8: 0 at all 251 men's containers, 1 at all 251 women's
+container_nation = 0x170      # pointer back to its nation
+nation_code = 0x28            # an FM string: "ITA"
+nation_men = 0x108            # 0x110 on the Mac
+nation_women = 0x110          # 0x118 on the Mac
+
+# The game's transfers, and a move agreed for a later day, which the game makes on that day as it makes its own: it
+# keeps the player's season with the club he leaves, opens one with the club he joins, writes the fee into the
+# history and pays it (see crates/fmlibre-core/src/arranged.rs and docs/recon/fm27-transfers.md). Read on Game Pass
+# 0.9.2524.0, on a save of October 2026: Ebere Eze from Arsenal to West Ham for £7,777,777, arranged by the editor,
+# was made by the game on the day, which kept Arsenal's row of his season with his matches.
+[transfers]
+manager_class = "TRANSFER_MANAGER"
+offers = 0x20             # in the manager: (begin, end, capacity) of pointers to the offers (5,178 after a load)
+due = 0x50                # (begin, end, capacity) of pointers to the moves due on a day (103), malloc'd blocks
+due_flag = 0x68           # u8: 1 while a move is due
+offer_class = "FULL_TRANSFER_OFFER"
+offer_size = 0xD0         # slots of the game's pool of offers
+offer_one = 0x08          # 1
+offer_flags = 0x30        # 0x40 on the agreed transfers the game makes most
+offer_person = 0x38       # the player's person block
+offer_buyer = 0x40        # the senior team he joins
+offer_buyer_again = 0x48  # the same
+offer_seller = 0x50       # the team that employs him
+offer_fee = 0x58          # u32 pounds
+offer_number = 0x5C       # u32: the entries and the moves due name the offer by it
+offer_count = 0x60        # u32: a count of the offers made
+offer_unset = [0x64, 0x68] # i32 -1
+offer_accepted = 0x6C     # date, unset until the move
+offer_moved = 0x70        # date the move was made, unset until then
+offer_made = 0x74         # date the offer was made
+offer_lapses = 0x78       # date it lapses, 30 days on
+offer_move_day = 0x7C     # date of the move
+offer_later = 0x80        # date, unset
+offer_state = 0x8D        # u8: 19 agreed and waiting for its day, 20 made
+offer_kind = 0x86         # u8: 2 a transfer with a fee, 8 a free move at the end of a contract, 1 most loans (read on the Mac)
+offer_payment = 0xA8      # pointer to how the fee is paid; null pays it at once
+entry_size = 0x48
+entry_one = 0x00          # u32 1
+entry_contract = 0x10     # pointer to the contract
+entry_number = 0x28       # u32 the offer's number
+entry_no_amount = 0x2C    # i32 -9,999,999
+entry_date = 0x38         # date, unset
+entry_state = 0x3E        # u8: 2 agreed and waiting
+entry_one_again = 0x3F    # u8 1
+entry_agreed = 0x40       # u8 1
+entry_kind = 0x41         # u8: 2 a transfer with a fee
+due_size = 0x10
+due_person = 0x00         # the player's person block
+due_day = 0x08            # date of the move, without flags
+due_number = 0x0C         # u32 the offer's number
+player_offer_numbers = 0x320 # in a player: pointer to his record of offers' numbers, a list of u32
+player_entries = 0x328    # in a player: pointer to his record of entries, a list of pointers
+record_size = 0x28        # a record: (begin, end, capacity), then 16 bytes of nothing

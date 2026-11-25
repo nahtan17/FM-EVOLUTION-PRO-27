@@ -1,0 +1,4629 @@
+// Stand-ins for the Rust commands so the UI can be developed in a plain browser
+// (`npm run dev`) without the game or Tauri. Every player here is made up.
+
+import { demoStadiumFieldTable, isPitchDimension, standPositions, type StadiumDetails, type StadiumValue } from "../stadiumFields";
+import { dateFromNumber, numberFromDate, plusYears } from "../editing";
+import { fold } from "../format";
+import { profileRoleCatalog, scoutingOpportunities, scoutingOverview, scoutingSimilar, scoutingSuggest, youthIntakes } from "./mockScouting";
+import type {
+  ApplyReport,
+  ArrayRef,
+  AttributeBound,
+  ClubMoney,
+  FeePlan,
+  Nation,
+  BridgeInfo,
+  CaptainRole,
+  City,
+  ClubTeam,
+  EditEntity,
+  NationalProfile,
+  NationalSide,
+  NationalStatus,
+  NationalTeamSummary,
+  ScoutRequest,
+  SimilarRequest,
+  SquadPlayer,
+  TeamAction,
+  FitnessTargets,
+  TeamFreeze,
+  FreezeKind,
+  ClubDetails,
+  ClubFilter,
+  CompetitionPrizes,
+  League,
+  LeaguePrizes,
+  ClubSponsorships,
+  Sponsorship,
+  LeaguePrizesSet,
+  PrizeInput,
+  ClubPage,
+  ClubStaffRow,
+  ClubSummary,
+  CheckKey,
+  ConnectionInfo,
+  Detection,
+  Failure,
+  FmDate,
+  GoldenGenerationPreview,
+  GameInfo,
+  Health,
+  Ban,
+  Injury,
+  LoanDetails,
+  Tie,
+  Clause,
+  TieKind,
+  PlayerDetails,
+  PlayerFilter,
+  PlayerOrder,
+  PlayerPage,
+  PlayerSummary,
+  NameKind,
+  PersonNames,
+  Refrozen,
+  ReloadInfo,
+  StaffDetails,
+  StaffFilter,
+  StaffOrder,
+  StaffPage,
+  StaffSummary,
+  EditField,
+  Entity,
+  ExportReport,
+  FieldEdit,
+  FieldValues,
+  LoggedChange,
+  BatchUndo,
+  MassFilters,
+  MassOperation,
+  MassOperationKind,
+  MassPreview,
+  MassReport,
+  ArrangedPreview,
+  ClubName,
+  MovePreview,
+  OpportunityRequest,
+  MoveTerms,
+  PlannedChange,
+  RoomMaker,
+  StadiumName,
+  SkippedField,
+} from "../types";
+
+const GAME_DATE: FmDate = { year: 2026, month: 7, day: 18 };
+
+/** The age on `today` of someone born on `born`. */
+const ageOn = (born: FmDate, today: FmDate) =>
+  today.year - born.year - (today.month * 100 + today.day < born.month * 100 + born.day ? 1 : 0);
+
+const game: GameInfo = {
+  pid: 4242,
+  exePath: "D:\\Games\\Football Manager 27\\Content\\fm.exe",
+  storefront: "gamePass",
+  edition: 27,
+  packageFullName: "SportsInteractive.FootballManager27_0.9.2409.0_x64__5w3tn6tb6stnm",
+  packageVersion: "0.9.2409.0",
+  steamBuild: null,
+};
+
+const FIRST = ["Arda", "Mateo", "Lukas", "Kerem", "Jonas", "Rafael", "Emre", "Noah", "Tiago", "Søren", "Ilkay", "Bruno"];
+/** The first names of the fixture women; the other names are shared. */
+const FIRST_WOMEN = ["Aitana", "Elif", "Lena", "Ebru", "Sofia", "Marta", "Ingrid", "Chloé", "Zehra", "Pernille"];
+const LAST = ["Yılmaz", "Fernández", "Hoffmann", "Aydın", "Lindqvist", "Moreau", "Çelik", "Kowalski", "Silva", "Novák"];
+const NATIONS = ["Türkiye", "Spain", "Germany", "Brazil", "Denmark", "France", "Poland", "Portugal", "Czechia"];
+/** Every fixture nation: those of the players, and two that work permits are about. */
+const ALL_NATIONS = [...NATIONS, "England", "Scotland"];
+const CLUBS = ["Northbridge FC", "Atlético Riverside", "Sporting Harbour", "FC Lindenau", "Kuzey Spor", "Old Mill United"];
+
+/** Where the game would keep each fixture nation: what a nation field holds. */
+const nationAddress = (nation: string) => 0x7f00_0000 + ALL_NATIONS.indexOf(nation) * 0x400;
+
+/** The fixture nation a nation field's value stands for. */
+const nationAt = (address: number) => ALL_NATIONS.find((nation) => nationAddress(nation) === address);
+
+/** A few cities of each fixture nation, which fixture people were born in. */
+const CITIES: Record<string, string[]> = {
+  Türkiye: ["İstanbul", "Ankara", "İzmir", "Bursa", "Trabzon", "Antalya", "Kayseri"],
+  Spain: ["Madrid", "Barcelona", "Sevilla", "Valencia", "Bilbao"],
+  Germany: ["Berlin", "Hamburg", "München", "Köln", "Dortmund"],
+  Brazil: ["São Paulo", "Rio de Janeiro", "Belo Horizonte", "Porto Alegre"],
+  Denmark: ["København", "Aarhus", "Odense"],
+  France: ["Paris", "Marseille", "Lyon", "Lille", "Bordeaux"],
+  Poland: ["Warszawa", "Kraków", "Gdańsk"],
+  Portugal: ["Lisboa", "Porto", "Braga"],
+  Czechia: ["Praha", "Brno", "Ostrava"],
+  England: ["London", "Manchester", "Liverpool", "Birmingham"],
+  Scotland: ["Glasgow", "Edinburgh", "Aberdeen"],
+};
+
+/** Every fixture city, as `birth_cities` lists them: by name. */
+const BIRTH_CITIES: City[] = ALL_NATIONS.flatMap((nation, n) =>
+  (CITIES[nation] ?? []).map((name, i) => ({
+    address: 0x6e00_0000 + n * 0x1000 + i * 0x58,
+    uid: 500_000 + n * 100 + i,
+    name,
+    nationUid: 1000 + n,
+  })),
+).sort((a, b) => a.name.localeCompare(b.name));
+
+/** The city a fixture player was born in: one of his nation's, steady for his UID, or one he was set to. */
+function cityOf(player: { uid: number; nation: string | null }): City | null {
+  const written = writtenCity(player.uid);
+  if (written !== undefined) {
+    return BIRTH_CITIES.find((city) => city.address === written) ?? null;
+  }
+  const n = player.nation === null ? -1 : ALL_NATIONS.indexOf(player.nation);
+  const own = BIRTH_CITIES.filter((city) => city.nationUid === 1000 + n);
+  return own.length > 0 ? own[player.uid % own.length] : null;
+}
+
+/**
+ * A fixture person's nation and club with their UIDs, as the real rows have them: the men's club of that name (see
+ * `clubs` below), or for a woman the women's club.
+ */
+function withUids(nation: string, club: string | null, woman = false) {
+  const at = club === null ? -1 : CLUBS.indexOf(club);
+  return {
+    nation,
+    nationUid: 1000 + NATIONS.indexOf(nation),
+    club,
+    clubUid: club === null ? null : woman ? 2_000_100_000 + at : 500 + at * 7,
+  };
+}
+
+/** Small deterministic generator so the fixtures look the same on every reload. */
+function random(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    return state / 2147483648;
+  };
+}
+
+/** The 15 positions, in the order the game stores their ratings. */
+const POSITIONS = ["gk", "sw", "dl", "dc", "dr", "dm", "ml", "mc", "mr", "aml", "amc", "amr", "st", "wbl", "wbr"];
+
+/** From this rating FM counts a position as one a player can play: the list's positions and its filter use it. */
+const PLAYABLE_RATING = 15;
+
+/** Every eleventh fixture player is a goalkeeper. */
+const isKeeper = (uid: number) => uid % 11 === 0;
+
+/**
+ * The squad status of a fixture contract: `drawn` (1 to 5), but the first-choice goalkeeper (15) for a few keepers,
+ * surplus to requirements (22) or a fringe player (7) for a few others.
+ */
+const squadStatusOf = (uid: number, drawn: number) =>
+  isKeeper(uid) && uid % 2 === 0 ? 15 : uid % 19 === 0 ? 22 : uid % 23 === 0 ? 7 : drawn;
+
+/** How well a fixture player plays each position (1–20): one natural position, a few that come close, the rest low. */
+function positionRatings(next: () => number, keeper: boolean): Record<string, number> {
+  const natural = keeper ? "gk" : POSITIONS[1 + Math.floor(next() * (POSITIONS.length - 1))];
+  return Object.fromEntries(
+    POSITIONS.map((key) => [key, key === natural ? 20 : keeper || key === "gk" ? 1 : Math.round(1 + next() ** 2 * 16)]),
+  );
+}
+
+/** The positions rated PLAYABLE_RATING or more, best first (equals in the order of POSITIONS), as the real list has them. */
+function playablePositions(ratings: Record<string, number>): string[] {
+  return POSITIONS.filter((key) => ratings[key] >= PLAYABLE_RATING).sort((a, b) => ratings[b] - ratings[a]);
+}
+
+/** When a fixture contract ends: mostly on 30 June, some at the turn of the year, a few this year (after the game date). */
+function contractEnd(next: () => number): FmDate {
+  const roll = next();
+  if (roll < 0.12) {
+    return { year: GAME_DATE.year, month: 12, day: 31 };
+  }
+  const year = GAME_DATE.year + 1 + Math.floor(next() * 5);
+  return roll < 0.8 ? { year, month: 6, day: 30 } : { year, month: 12, day: 31 };
+}
+
+/**
+ * The fixture players, and how well each plays every position (by UID): the list and the profile both read the ratings.
+ * The men come first; the women after them, who play for the women's clubs or none, are in `women` too.
+ */
+const { players, ratings, women } = (() => {
+  const next = random(27);
+  const pick = <T,>(items: T[]) => items[Math.floor(next() * items.length)];
+  const ratings: Record<number, Record<string, number>> = {};
+  const players = Array.from({ length: 400 }, (_, i): PlayerSummary => {
+    const uid = 1_000_000 + i * 37;
+    const ca = Math.round(40 + next() * 150);
+    const name = `${pick(FIRST)} ${pick(LAST)}`;
+    const born: FmDate = { year: 1988 + Math.floor(next() * 20), month: 1 + Math.floor(next() * 12), day: 1 + Math.floor(next() * 28) };
+    const fullName = next() < 0.3 ? `${name} ${pick(LAST)}` : null;
+    const nation = pick(NATIONS);
+    const club = next() < 0.9 ? pick(CLUBS) : null;
+    const potentialAbility = Math.min(200, ca + Math.round(next() * 40));
+    // Positions and contract are drawn from a generator of their own, so the other fields of each player come out as before.
+    const own = random(uid ^ 0x5a5a5a);
+    ratings[uid] = positionRatings(own, isKeeper(uid));
+    return {
+      uid,
+      name,
+      fullName,
+      dateOfBirth: born,
+      age: ageOn(born, GAME_DATE),
+      ...withUids(nation, club),
+      positions: playablePositions(ratings[uid]),
+      contractExpires: club === null ? null : contractEnd(own),
+      currentAbility: ca,
+      potentialAbility,
+    };
+  });
+  // The women are drawn from a generator of their own, so the men come out as before.
+  const nextWoman = random(1971);
+  const pickWoman = <T,>(items: T[]) => items[Math.floor(nextWoman() * items.length)];
+  const womenPlayers = Array.from({ length: 120 }, (_, i): PlayerSummary => {
+    const uid = 3_000_000 + i * 41;
+    const ca = Math.round(40 + nextWoman() * 140);
+    const born: FmDate = {
+      year: 1990 + Math.floor(nextWoman() * 18),
+      month: 1 + Math.floor(nextWoman() * 12),
+      day: 1 + Math.floor(nextWoman() * 28),
+    };
+    const club = nextWoman() < 0.85 ? pickWoman(CLUBS) : null;
+    const own = random(uid ^ 0x5a5a5a);
+    ratings[uid] = positionRatings(own, isKeeper(uid));
+    return {
+      uid,
+      name: `${pickWoman(FIRST_WOMEN)} ${pickWoman(LAST)}`,
+      fullName: null,
+      dateOfBirth: born,
+      age: ageOn(born, GAME_DATE),
+      ...withUids(pickWoman(NATIONS), club, true),
+      positions: playablePositions(ratings[uid]),
+      contractExpires: club === null ? null : contractEnd(own),
+      currentAbility: ca,
+      potentialAbility: Math.min(200, ca + Math.round(nextWoman() * 40)),
+    };
+  });
+  const women = new Set(womenPlayers.map((p) => p.uid));
+  // Youngsters of the first men's club, 15 to 17, as the game would have made them at its youth intakes; drawn from a
+  // generator of their own, so the others come out as before.
+  const nextYouth = random(2011);
+  const pickYouth = <T,>(items: T[]) => items[Math.floor(nextYouth() * items.length)];
+  const academy = Array.from({ length: 14 }, (_, i): PlayerSummary => {
+    const uid = 2_002_068_000 + i * 3;
+    const ca = Math.round(35 + nextYouth() * 60);
+    const born: FmDate = {
+      year: 2009 + Math.floor(nextYouth() * 3),
+      month: 1 + Math.floor(nextYouth() * 12),
+      day: 1 + Math.floor(nextYouth() * 28),
+    };
+    const own = random(uid ^ 0x5a5a5a);
+    ratings[uid] = positionRatings(own, isKeeper(uid));
+    return {
+      uid,
+      name: `${pickYouth(FIRST)} ${pickYouth(LAST)}`,
+      fullName: null,
+      dateOfBirth: born,
+      age: ageOn(born, GAME_DATE),
+      ...withUids(nextYouth() < 0.8 ? NATIONS[0] : pickYouth(NATIONS), CLUBS[0]),
+      positions: playablePositions(ratings[uid]),
+      contractExpires: { year: 2029, month: 6, day: 30 },
+      currentAbility: ca,
+      potentialAbility: Math.min(200, ca + 25 + Math.round(nextYouth() * 85)),
+    };
+  });
+  return { players: [...players, ...womenPlayers, ...academy], ratings, women };
+})();
+
+const ATTRIBUTES = [
+  "corners", "crossing", "dribbling", "finishing", "first_touch", "free_kicks", "heading", "long_shots",
+  "long_throws", "marking", "passing", "penalty_taking", "tackling", "technique", "aggression", "anticipation",
+  "bravery", "composure", "concentration", "decisions", "determination", "flair", "leadership", "off_the_ball",
+  "positioning", "teamwork", "vision", "work_rate", "acceleration", "agility", "balance", "jumping_reach",
+  "natural_fitness", "pace", "stamina", "strength", "aerial_reach", "command_of_area", "communication",
+  "eccentricity", "handling", "kicking", "one_on_ones", "punching", "reflexes", "rushing_out", "throwing",
+  "consistency", "dirtiness", "important_matches", "injury_proneness", "versatility", "left_foot", "right_foot",
+];
+const GK_ONLY = new Set([
+  "aerial_reach", "command_of_area", "communication", "eccentricity", "handling", "kicking", "one_on_ones",
+  "punching", "reflexes", "rushing_out", "throwing",
+]);
+const PERSONALITY = [
+  "adaptability", "ambition", "loyalty", "pressure", "professionalism", "sportsmanship", "temperament", "controversy",
+];
+
+/** The teammate a made-up reason to be unhappy is about: the first other player of his club, so groups form. */
+function teammateOf(player: PlayerSummary): { uid: number; name: string } | null {
+  const mate = players.find((p) => p.clubUid !== null && p.clubUid === player.clubUid && p.uid !== player.uid);
+  return mate ? { uid: mate.uid, name: mate.name } : null;
+}
+
+/** Made-up but self-consistent profile for a fixture player. */
+function details(player: PlayerSummary): PlayerDetails {
+  const next = random(player.uid);
+  const keeper = isKeeper(player.uid);
+  const level = generatedAbility.get(player.uid)! / 2; // raw attribute centre, 0–100
+  const attributes = Object.fromEntries(
+    ATTRIBUTES.map((key) => {
+      const centre = GK_ONLY.has(key) !== keeper ? 12 : level;
+      const raw = Math.max(1, Math.min(100, Math.round(centre + (next() - 0.5) * 40)));
+      return [key, { raw, value: Math.max(1, Math.min(20, Math.floor((raw + 2) / 5))) }];
+    }),
+  );
+  const personality = Object.fromEntries(PERSONALITY.map((key) => [key, Math.round(1 + next() * 19)]));
+  return withWritten("player", {
+    ...player,
+    heightCm: Math.round(168 + next() * 26),
+    askingPrice: next() < 0.2 ? Math.round(next() * 40) * 1_000_000 : null,
+    reputation: { home: Math.round(next() * 10000), current: Math.round(next() * 10000), world: Math.round(next() * 10000) },
+    international: { caps: Math.round(next() * 90), goals: Math.round(next() * 30), u21Caps: Math.round(next() * 20), u21Goals: Math.round(next() * 8) },
+    // The ratings behind the positions of the list row: the profile and the row agree.
+    positionRatings: { ...ratings[player.uid] },
+    personality,
+    attributes,
+    contract: player.club
+      ? {
+          wage: Math.round(generatedAbility.get(player.uid)! * 900 + next() * 20000),
+          signed: { year: 2024, month: 7, day: 1 },
+          expires: player.contractExpires,
+          joined: { year: 2022, month: 8, day: 15 },
+          squadStatus: squadStatusOf(player.uid, 1 + Math.floor(next() * 5)),
+          contractType: player.uid % 13 === 0 ? 3 : player.uid % 17 === 0 ? 0 : 1,
+          squadNumber: 1 + Math.floor(next() * 40),
+          transferListed: next() < 0.1,
+          loanListed: false,
+          loyaltyBonus: Math.round(next() * 30000),
+          happiness: Math.round(-20 + next() * 100),
+          playingTimeHappiness: Math.round(next() * 40),
+          clauses: clausesOf(player.uid, [
+            { index: 0, kind: 32, amount: Math.round(10000 + next() * 60000), condition: null },
+            { index: 1, kind: 33, amount: Math.round(5000 + next() * 40000), condition: null },
+            { index: 2, kind: 38, amount: Math.round(2000 + next() * 15000), condition: null },
+            ...(next() < 0.5 ? [{ index: 3, kind: 0, amount: Math.round(50 + next() * 500) * 1_000_000, condition: null }] : []),
+            ...(next() < 0.5 ? [{ index: 4, kind: 22, amount: null, condition: 1 }] : []),
+            // A few kinds more, as the game holds them: a release clause that expires 791 days after the contract's
+            // start, a sell-on clause on the profit over an amount, a new wage after a number of league games.
+            ...(player.uid % 4 === 0 ? [{ index: 5, kind: 17, amount: 30_000_000, condition: 791 }] : []),
+            ...(player.uid % 6 === 0 ? [{ index: 6, kind: 9, amount: 2_147_579, condition: 7 }] : []),
+            ...(player.uid % 10 === 0 ? [{ index: 7, kind: 13, amount: 118_462, condition: 30 }] : []),
+          ]),
+          // A few players have reasons to be unhappy: one over, and one or two that last, the first of them held about
+          // a teammate.
+          concerns:
+            next() < 0.3
+              ? [
+                  {
+                    started: { year: 2026, month: 7, day: 2 },
+                    ended: { year: 2026, month: 7, day: 9 },
+                    motive: 1202,
+                    kind: 1,
+                    wording: 0,
+                    flags: 0,
+                    about: null,
+                  },
+                  {
+                    started: { year: 2026, month: 7, day: 12 },
+                    ended: null,
+                    motive: 926,
+                    kind: 1,
+                    wording: 0,
+                    flags: 0,
+                    about: teammateOf(player),
+                  },
+                  // Left out of a competition squad, and wanting more playing time, which the game words by the entry.
+                  ...(next() < 0.5
+                    ? [
+                        { started: { year: 2026, month: 7, day: 15 }, ended: null, motive: 596, kind: 2, wording: 0, flags: 0, about: null },
+                        { started: { year: 2026, month: 7, day: 16 }, ended: null, motive: 650, kind: 1, wording: 1, flags: 0, about: null },
+                      ]
+                    : []),
+                ]
+              : [],
+          // A player moved to another club signed today, without a squad number, off the transfer list.
+          ...(movedPlayers.has(player.uid) && {
+            signed: GAME_DATE,
+            joined: GAME_DATE,
+            squadNumber: null,
+            transferListed: false,
+          }),
+        }
+      : null,
+    // As stored: energy and match sharpness 0–10000 (sharpness mostly 35% or more), and jadedness
+    // from -500, fully rested, to a little above 0 early in a season.
+    condition: Math.round(7000 + next() * 3000),
+    matchSharpness: Math.round(3500 + next() * 6500),
+    jadedness: Math.round(-500 + next() * 600),
+    traits: [7, 10, 19, 20, 35, 43, 51].filter(() => next() < 0.4),
+    injuries: injuriesOf(player.uid),
+    bans: bansOf(player.uid),
+    ties: tiesOf(player),
+    tieRoom: tieRoomOf(player),
+    tiesGrow: true,
+    clauseRoom: player.club ? clauseRoomOf(player.uid) : 0,
+    retirementKnown: true,
+    retires: retiresOf(player.uid),
+    loan: loanOf(player),
+    // Drawn last, so that the values above come out as before.
+    morale: Math.round(7 + next() * 10),
+  });
+}
+
+/**
+ * Where a fixture player is on loan: every thirteenth player with a club plays there on loan from the next fixture
+ * club, from the end of June to the end of the season, number 1 + his UID modulo 40 there.
+ */
+function loanOf(player: PlayerSummary): LoanDetails | null {
+  if (player.club === null || player.clubUid === null || player.uid % 13 !== 6 || movedPlayers.has(player.uid)) {
+    return null;
+  }
+  const at = (CLUBS.indexOf(player.club) + 1) % CLUBS.length;
+  const parentUid = player.clubUid >= 2_000_100_000 ? 2_000_100_000 + at : 500 + at * 7;
+  return {
+    clubUid: player.clubUid,
+    club: player.club,
+    parentUid,
+    parent: CLUBS[at],
+    from: { year: 2026, month: 6, day: 29 },
+    until: { year: 2027, month: 6, day: 30 },
+    squadNumber: 1 + (player.uid % 40),
+    wage: 2_000 + (player.uid % 50) * 900,
+    ends: "later",
+    recalled: false,
+    terms: loanTermsOf(player.uid),
+  };
+}
+
+/**
+ * Terms for a fixture loan, as the Steam save shows them: about one loan in three cannot be recalled in the game, and
+ * those mostly cannot be terminated either and carry an option to buy and monthly fees (Anton Kade's: flags 0x1002).
+ */
+function loanTermsOf(uid: number): LoanDetails["terms"] {
+  const strict = uid % 3 === 0;
+  const flags = strict ? 0x1002 : 0x106;
+  return {
+    canBeRecalled: (flags & 0x4) !== 0,
+    canBeTerminated: (flags & 0x1000) === 0,
+    cupMatches: (flags & 0x2) !== 0,
+    againstOwnClub: (flags & 0x1) !== 0,
+    optionFee: strict ? 5_000_000 + (uid % 20) * 1_000_000 : null,
+    monthlyFee: strict ? 150_000 : null,
+    unusedFee: strict ? 200_000 : null,
+    flags,
+  };
+}
+
+/** Where the end `until` of a fixture loan stands against the game's date, as the real details say. */
+function loanEnd(until: FmDate | null): LoanDetails["ends"] {
+  if (until === null) {
+    return "unknown";
+  }
+  const [end, today] = [numberFromDate(until), numberFromDate(GAME_DATE)];
+  return end > today ? "later" : end === today ? "today" : "passed";
+}
+
+/** The fixture players healed through the editor, by UID, while the healing is not undone. */
+const healedPlayers = new Set<number>();
+
+/** `date` moved on by `days`. */
+function addDays(date: FmDate, days: number): FmDate {
+  const moved = new Date(Date.UTC(date.year, date.month - 1, date.day + days));
+  return { year: moved.getUTCFullYear(), month: moved.getUTCMonth() + 1, day: moved.getUTCDate() };
+}
+
+/** The current injuries of a fixture player: every seventh one is injured, some of them twice over, until healed. */
+function injuriesOf(uid: number): Injury[] {
+  if (uid % 7 !== 3 || healedPlayers.has(uid)) {
+    return [];
+  }
+  const injury = (name: string, daysAgo: number, soonest: number, latest: number): Injury => {
+    const started = addDays(GAME_DATE, -daysAgo);
+    return { name, started, backSoonest: addDays(started, soonest), backLatest: addDays(started, latest) };
+  };
+  const injuries = [injury("Hamstring strain", 4, 21, 35)];
+  if (uid % 2 === 0) {
+    injuries.push(injury("Twisted ankle", 1, 7, 12));
+  }
+  return injuries;
+}
+
+// Ties: secondary nationalities and homegrown status --------------------------------------------------------------
+
+/** The homegrown rules the real `change_tie` and `add_tie` write. */
+const HOMEGROWN_RULES = [1, 2, 5, 10];
+
+/** The ties of the fixture players changed through the editor, by UID; the others have the ones `fixtureTies` gives. */
+const tiesSet = new Map<number, Tie[]>();
+
+/** What each change to a player's ties (by the id of its logged change) found, for its undo. */
+const tieUndo = new Map<number, Tie[]>();
+
+/**
+ * A fixture player's ties as the game would hold them: every fifth player has a secondary nationality, and each was
+ * trained in his nation and at his club under the 15–21 rule.
+ */
+function fixtureTies(player: PlayerSummary): Tie[] {
+  const ties: Tie[] = [];
+  if (player.uid % 5 === 0) {
+    const other = NATIONS[(NATIONS.indexOf(player.nation ?? NATIONS[0]) + 1) % NATIONS.length];
+    ties.push({ index: 0, tie: "nationality", targetUid: 1000 + NATIONS.indexOf(other), name: other, rule: null, days: null });
+  }
+  if (player.nation) {
+    ties.push({ index: 0, tie: "trainedInNation", targetUid: player.nationUid ?? 0, name: player.nation, rule: 1, days: null });
+  }
+  if (player.club && player.clubUid !== null) {
+    ties.push({ index: 0, tie: "trainedAtClub", targetUid: player.clubUid, name: player.club, rule: 1, days: null });
+  }
+  // One in seven needs no work permit in England, as players of the EU who were there before Brexit.
+  if (player.uid % 7 === 1) {
+    const england = ALL_NATIONS.indexOf("England");
+    ties.push({ index: 0, tie: "workPermit", targetUid: 1000 + england, name: "England", rule: null, days: 515 });
+  }
+  // A list holds other relations too: the ties are spread through it.
+  return ties.map((tie, i) => ({ ...tie, index: i * 2 + 1 }));
+}
+
+const tiesOf = (player: PlayerSummary) => tiesSet.get(player.uid) ?? fixtureTies(player);
+
+/** Room for one or two more ties in every third list, less what was added to it. */
+const tieRoomOf = (player: PlayerSummary) =>
+  Math.max(0, (player.uid % 3) - (tiesOf(player).length - fixtureTies(player).length));
+
+/** The fixture club with the UID `uid`, or the real commands' failure. */
+function mockClub(uid: number): ClubSummary {
+  const club = clubs.find((c) => c.uid === uid);
+  if (!club) {
+    throw notFound("club", uid);
+  }
+  return club;
+}
+
+/** The name of the nation or club with the UID `target`, as a tie of `kind` points at one or the other. */
+const targetName = (kind: TieKind, target: number) =>
+  kind === "trainedAtClub" ? mockClub(target).name : mockNation(target);
+
+/** The fixture nation with the UID `uid`, or the real commands' failure. */
+function mockNation(uid: number): string {
+  const name = ALL_NATIONS[uid - 1000];
+  if (name === undefined) {
+    throw failure("app.notFound", `No nation with UID ${uid}`, { uid });
+  }
+  return name;
+}
+
+/** Logs a change to a player's ties as the real commands do, keeping his ties as they were for undoing it. */
+function logTie(player: PlayerSummary, before: Tie | null, after: Tie | null, ties: Tie[]): LoggedChange {
+  const id = changes.length + 1;
+  tieUndo.set(id, tiesOf(player));
+  tiesSet.set(player.uid, ties);
+  const kind = (before ?? after)!.tie;
+  const end = (tie: Tie | null) => tie && { name: tie.name ?? String(tie.targetUid), rule: tie.rule };
+  const logged: LoggedChange = {
+    id,
+    at: Date.now(),
+    name: player.name,
+    entity: "player",
+    uid: player.uid,
+    field: `tie.${kind}`,
+    old: before?.targetUid ?? 0,
+    new: after?.targetUid ?? 0,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+    tie: { from: end(before), to: end(after) },
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+/** The fixture player `uid`, and his tie at `index`, or the real commands' failures. */
+function tieAt(uid: number, index: number): [PlayerSummary, Tie] {
+  const player = players.find((p) => p.uid === uid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  const tie = tiesOf(player).find((t) => t.index === index);
+  if (!tie) {
+    throw failure("relation.missing", `the player has no nationality or homegrown tie number ${index}`, { index });
+  }
+  return [player, tie];
+}
+
+/** `change_tie`: points a fixture player's tie at another nation or club, or gives a training another rule. */
+function changeTie(uid: number, index: number, nation?: number, club?: number, rule?: number): LoggedChange {
+  const [player, tie] = tieAt(uid, index);
+  if (rule !== undefined && (tie.rule === null || !HOMEGROWN_RULES.includes(rule))) {
+    throw failure("relation.rule", `homegrown rule ${rule} is not one the editor writes`, { rule });
+  }
+  const target = nation ?? club;
+  if (target !== undefined && (club !== undefined) !== (tie.tie === "trainedAtClub")) {
+    throw failure("relation.target", "that is not a nation or club of the game, of the kind this tie takes");
+  }
+  const after: Tie = {
+    ...tie,
+    ...(target !== undefined && { targetUid: target, name: targetName(tie.tie, target) }),
+    ...(rule !== undefined && { rule }),
+  };
+  const ties = tiesOf(player);
+  if (ties.some((t) => t.tie === after.tie && t.targetUid === after.targetUid && t.rule === after.rule)) {
+    throw failure("relation.same", "the player has that already");
+  }
+  return logTie(player, tie, after, ties.map((t) => (t.index === index ? after : t)));
+}
+
+/** `remove_tie`: takes a fixture player's tie out of his list. */
+function removeTie(uid: number, index: number): LoggedChange {
+  const [player, tie] = tieAt(uid, index);
+  return logTie(player, tie, null, tiesOf(player).filter((t) => t.index !== index));
+}
+
+/**
+ * A new tie of `kind` to `target` for a fixture player at `index`, checked as the real commands check it: a training
+ * takes a rule the editor writes, and he may not have it already.
+ */
+function newTie(player: PlayerSummary, index: number, kind: TieKind, target: number, rule?: number): Tie {
+  const training = kind === "trainedInNation" || kind === "trainedAtClub";
+  if (training !== (rule !== undefined) || (rule !== undefined && !HOMEGROWN_RULES.includes(rule))) {
+    throw failure("relation.rule", `homegrown rule ${rule ?? 0} is not one the editor writes`, { rule: rule ?? 0 });
+  }
+  const days = kind === "workPermit" ? 515 : null;
+  const tie: Tie = { index, tie: kind, targetUid: target, name: targetName(kind, target), rule: rule ?? null, days };
+  if (tiesOf(player).some((t) => t.tie === kind && t.targetUid === target && t.rule === tie.rule)) {
+    throw failure("relation.same", "the player has that already");
+  }
+  return tie;
+}
+
+/** `add_tie`: gives a fixture player a nationality, or a nation or club he was trained in. */
+function addTie(uid: number, kind: TieKind, target: number, rule?: number): LoggedChange {
+  const player = players.find((p) => p.uid === uid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  const ties = tiesOf(player);
+  // As on Windows: a list without room is grown.
+  const after = newTie(player, Math.max(0, ...ties.map((t) => t.index)) + 1, kind, target, rule);
+  return logTie(player, null, after, [...ties, after]);
+}
+
+/** The fixture players whose bans were lifted through the editor, by UID, while the lifting is not undone. */
+const liftedPlayers = new Set<number>();
+
+/**
+ * Cohesion with the club as Max cohesion set it, by UID. The rest have the made-up one `cohesionOf` gives, and one player
+ * in seven none, as a player who has only just joined has no entry for his club yet.
+ */
+const cohesionSet = new Map<number, number>();
+
+function cohesionOf(uid: number): number | null {
+  if (cohesionSet.has(uid)) {
+    return cohesionSet.get(uid)!;
+  }
+  return uid % 7 === 0 ? null : 1 + ((uid * 37) % 99);
+}
+
+/**
+ * How well a player knows the team's tactic as Max tactics left it, by UID. The rest have the made-up one `tacticsOf`
+ * gives; one player in nine does not train, as when injured, and Max tactics fills only his record: half his circles.
+ */
+const tacticsSet = new Map<number, number>();
+
+function tacticsOf(uid: number): number {
+  return tacticsSet.get(uid) ?? 30 + ((uid * 53) % 66);
+}
+
+function trainsOf(uid: number): boolean {
+  return uid % 9 !== 4;
+}
+
+/** The current bans of a fixture player: every eleventh one is banned, for one to three matches, until lifted. */
+function bansOf(uid: number): Ban[] {
+  if (uid % 11 !== 5 || liftedPlayers.has(uid)) {
+    return [];
+  }
+  return [{ started: addDays(GAME_DATE, -3), matches: 1 + (uid % 3) }];
+}
+
+/** The fixture players' contract clauses as changed through the editor, by UID, and as they were before each change. */
+const clausesSet = new Map<number, Clause[]>();
+const clauseUndo = new Map<number, Clause[]>();
+/** How many clauses each fixture contract's list holds: every third one has room for one more. */
+const clauseCapacity = new Map<number, number>();
+
+/** The clauses of a fixture contract: as changed through the editor, or as `generated`, numbered in order. */
+function clausesOf(uid: number, generated: Clause[]): Clause[] {
+  const listed = generated.map((clause, index) => ({ ...clause, index }));
+  if (!clauseCapacity.has(uid)) {
+    clauseCapacity.set(uid, listed.length + (uid % 3 === 0 ? 1 : 0));
+  }
+  return clausesSet.get(uid) ?? listed;
+}
+
+/** How many more clauses the fixture contract of `uid` has room for. */
+function clauseRoomOf(uid: number): number {
+  const capacity = clauseCapacity.get(uid) ?? 0;
+  const listed = clausesSet.get(uid)?.length ?? capacity - (uid % 3 === 0 ? 1 : 0);
+  return capacity - listed;
+}
+
+/** The fixture player `uid` and his contract's clauses, or the real commands' failures. */
+function clausesAt(uid: number): [PlayerSummary, Clause[]] {
+  const player = players.find((p) => p.uid === uid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  const clauses = details(player).contract?.clauses;
+  if (!clauses) {
+    throw failure("clause.noContract", "the player has no contract");
+  }
+  return [player, clauses];
+}
+
+/** Logs a change to a fixture contract's clauses, which then are `clauses`. */
+function logClause(player: PlayerSummary, before: Clause | null, after: Clause | null, clauses: Clause[]): LoggedChange {
+  const id = changes.length + 1;
+  clauseUndo.set(id, clausesAt(player.uid)[1]);
+  clausesSet.set(player.uid, clauses.map((clause, index) => ({ ...clause, index })));
+  const logged: LoggedChange = {
+    id,
+    at: Date.now(),
+    name: player.name,
+    entity: "player",
+    uid: player.uid,
+    field: "clause",
+    old: before?.amount ?? 0,
+    new: after?.amount ?? 0,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+    clause: { from: before, to: after },
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+// Stadium names ---------------------------------------------------------------------------------------------------
+
+/** The stadiums renamed through the editor, by club UID, while the rename is not undone. */
+const stadiumNames = new Map<number, string>();
+const stadiumCapacities = new Map<number, number>();
+
+/** The name of a fixture club's stadium, as renamed. */
+function stadiumNameOf(club: ClubSummary): string {
+  return stadiumNames.get(club.uid) ?? `${club.shortName} Park`;
+}
+
+/** Bytes of UTF-8, as the real app counts a name. */
+const utf8Bytes = (text: string) => new TextEncoder().encode(text).length;
+
+/**
+ * `stadium_name`: as the real command on Windows, any name up to 80 bytes; one club in eleven has a name other things
+ * share, which the real command renames all the same, by giving the stadium a string of its own.
+ */
+function stadiumNameRoom(uid: number): StadiumName {
+  const club = clubs.find((c) => c.uid === uid);
+  if (!club) {
+    throw notFound("club", uid);
+  }
+  return { name: stadiumNameOf(club), holders: uid % 11 === 3 ? 3 : 1, renamable: true, minBytes: 1, maxBytes: 80 };
+}
+
+/** `rename_stadium`: checked as the real command, and logged with the names; its undo puts the old one back. */
+function renameStadium(uid: number, name: string): LoggedChange {
+  const room = stadiumNameRoom(uid);
+  // eslint-disable-next-line no-control-regex
+  if (name === "" || name.trim() !== name || /[\u0000-\u001f\u007f]/.test(name)) {
+    throw failure("stadium.badName", "a stadium's name cannot be empty, start or end with a space, or hold control characters");
+  }
+  const bytes = utf8Bytes(name);
+  if (bytes < room.minBytes || bytes > room.maxBytes) {
+    throw failure("stadium.nameLength", "a new name for this stadium must take 1 to 80 bytes", {
+      min: String(room.minBytes),
+      max: String(room.maxBytes),
+      bytes: String(bytes),
+    });
+  }
+  const club = clubs.find((c) => c.uid === uid)!;
+  stadiumNames.set(uid, name);
+  const logged: LoggedChange = {
+    id: changes.length + 1,
+    at: Date.now(),
+    name: club.name,
+    entity: "club",
+    uid,
+    field: "stadium.name",
+    old: utf8Bytes(room.name),
+    new: bytes,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+    stadium: { from: room.name, to: name },
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+// Players' names --------------------------------------------------------------------------------------------------
+
+/** The names of the fixture players the editor renamed, by UID; the others' are read from their rows. */
+const playerNameSets = new Map<number, Omit<PersonNames, "room" | "longest">>();
+
+/**
+ * How many more new first, last and common names the fixture's tables take: 32 of each after a load in the game, but
+ * only two common names here, so that the dialog's "no room" state can be seen.
+ */
+const nameRoom: [number, number, number] = [32, 32, 2];
+
+const NAME_KINDS: NameKind[] = ["first", "last", "common", "full"];
+
+/** The names of a fixture player: as renamed, or the first word of his row's name, the rest, and his full name. */
+function namesOf(player: PlayerSummary): PersonNames {
+  const [first, ...rest] = player.name.split(" ");
+  const names = playerNameSets.get(player.uid) ?? { first, last: rest.join(" ") || first, common: null, full: player.fullName };
+  return { ...names, room: [...nameRoom], longest: 80 };
+}
+
+/** Gives the fixture player `names`, and his row the name the game shows: the common name, or first and last. */
+function setNames(player: PlayerSummary, names: PersonNames) {
+  playerNameSets.set(player.uid, { first: names.first, last: names.last, common: names.common, full: names.full });
+  player.name = names.common ?? `${names.first} ${names.last}`;
+  player.fullName = names.full;
+}
+
+/** `player_names`: the names of a fixture player, and the room the tables have. */
+function playerNamesOf(uid: number): PersonNames {
+  const player = players.find((p) => p.uid === uid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  return namesOf(player);
+}
+
+/** `rename_player`: checked as the real command; a new first, last or common name takes room in its table. */
+function renamePlayer(uid: number, kind: NameKind, name: string | null): LoggedChange {
+  const names = playerNamesOf(uid);
+  const player = players.find((p) => p.uid === uid)!;
+  const optional = kind === "common" || kind === "full";
+  const bad =
+    name === null
+      ? !optional
+      : // eslint-disable-next-line no-control-regex
+        name === "" || name.trim() !== name || /[\u0000-\u001f\u007f]/.test(name) || utf8Bytes(name) > names.longest;
+  if (bad) {
+    throw failure(
+      "names.bad",
+      "a first or last name cannot be empty, and no name can start or end with a space, hold control characters or take more than 80 bytes",
+      { max: names.longest },
+    );
+  }
+  const from = names[kind];
+  if (from === name) {
+    throw failure("names.same", "that is the name already");
+  }
+  const table = NAME_KINDS.indexOf(kind);
+  if (name !== null && table < 3) {
+    if (nameRoom[table] === 0) {
+      throw failure(
+        "names.noRoom",
+        `the game has no room for another new ${kind} name until it makes room itself, as it does when new players and staff come in: save the game, load the save again, and try again`,
+        { table: kind },
+      );
+    }
+    nameRoom[table] -= 1;
+  }
+  setNames(player, { ...names, [kind]: name });
+  const logged: LoggedChange = {
+    id: changes.length + 1,
+    at: Date.now(),
+    name: player.name,
+    entity: "player",
+    uid,
+    field: `name.${kind}`,
+    old: from === null ? 0 : utf8Bytes(from),
+    new: name === null ? 0 : utf8Bytes(name),
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+    personName: { from, to: name },
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+/** Undoes a change of a fixture player's name: he has the old one again (the new entry keeps its room, as in the game). */
+function undoPlayerName(entry: LoggedChange) {
+  const player = players.find((p) => p.uid === entry.uid);
+  if (player && entry.personName) {
+    const kind = entry.field.slice("name.".length) as NameKind;
+    setNames(player, { ...namesOf(player), [kind]: entry.personName.from });
+  }
+}
+
+/** `change_clause`: a new amount or condition for one of a fixture contract's clauses. */
+function changeClause(uid: number, index: number, amount?: number, condition?: number): LoggedChange {
+  const [player, clauses] = clausesAt(uid);
+  const clause = clauses[index];
+  if (!clause) {
+    throw failure("clause.missing", `the contract has no clause number ${index}`, { index });
+  }
+  if ((amount !== undefined && clause.amount === null) || (condition !== undefined && clause.condition === null)) {
+    const field = amount !== undefined && clause.amount === null ? "clause.amount" : "clause.condition";
+    throw failure("clause.notInClause", "this clause has nothing of that kind to change", { field });
+  }
+  const after: Clause = { ...clause, ...(amount !== undefined && { amount }), ...(condition !== undefined && { condition }) };
+  if (after.amount === clause.amount && after.condition === clause.condition) {
+    throw failure("clause.same", "the contract has that already");
+  }
+  return logClause(player, clause, after, clauses.map((c) => (c.index === index ? after : c)));
+}
+
+/** `remove_clause`: takes one of a fixture contract's clauses out. */
+function removeClause(uid: number, index: number): LoggedChange {
+  const [player, clauses] = clausesAt(uid);
+  const clause = clauses[index];
+  if (!clause) {
+    throw failure("clause.missing", `the contract has no clause number ${index}`, { index });
+  }
+  return logClause(player, clause, null, clauses.filter((c) => c.index !== index));
+}
+
+/** `add_release_clause`: gives a fixture contract without one a release clause, where its list has room. */
+function addReleaseClause(uid: number, amount: number): LoggedChange {
+  const [player, clauses] = clausesAt(uid);
+  if (clauses.some((c) => c.kind === 0)) {
+    throw failure("clause.same", "the contract has that already");
+  }
+  if (clauseRoomOf(uid) === 0) {
+    throw failure("clause.noRoom", "the contract's list of clauses has no room for another, and the editor cannot make it bigger");
+  }
+  const after: Clause = { index: clauses.length, kind: 0, amount, condition: null };
+  return logClause(player, null, after, [...clauses, after]);
+}
+
+/** The fixture players kept from retiring through the editor, by UID, while it is not undone. */
+const keptPlayers = new Set<number>();
+
+/** The retirement the game plans for a fixture player: every seventh one retires on 30 June next year, until kept. */
+function retiresOf(uid: number): FmDate | null {
+  if (uid % 7 !== 3 || keptPlayers.has(uid)) {
+    return null;
+  }
+  return { year: GAME_DATE.year + 1, month: 6, day: 30 };
+}
+
+/** `keep_playing`: the fixture player's retirement is taken out of the plans, logged as a change of his `retirement`. */
+function keepPlaying(uid: number): LoggedChange {
+  const player = players.find((p) => p.uid === uid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  const retires = retiresOf(uid);
+  if (retires === null) {
+    throw failure("retirement.none", "the game has not planned the player's retirement, and he already means to play on");
+  }
+  keptPlayers.add(uid);
+  const logged: LoggedChange = {
+    id: changes.length + 1,
+    at: Date.now(),
+    name: player.name,
+    entity: "player",
+    uid,
+    field: "retirement",
+    old: retires.year * 10000 + retires.month * 100 + retires.day,
+    new: 0,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+/** Job codes as stored in contracts (see labels.ts). */
+const JOBS = [16, 20, 2, 2, 2, 34, 26, 14, 14, 44, 12, 60, 64, 88, 10, 38, 46, 62];
+const STAFF_ATTRIBUTES = [
+  "attacking", "defending", "fitness", "goalkeeping", "possession", "set_pieces", "tactical", "technical",
+  "determination", "motivating", "people_management", "data_analysis", "judging_ability", "judging_potential",
+  "judging_staff", "negotiating", "tactical_knowledge", "physiotherapy", "sports_science",
+];
+const EXTRA_STAFF_ATTRIBUTES = ["coaching_player", "dirtiness_allowance", "versatility", "judging_team_data", "presenting_data"];
+const EXTRA_STAFF_RATINGS = ["tactical_attacking", "depth", "directness", "flamboyancy", "flexibility", "free_roles", "marking", "offside", "pressing", "sitting_back", "tempo", "use_of_playmaker", "use_of_substitutions", "width", "buying_players", "hardness_of_training", "mind_games", "squad_rotation", "business", "interference", "patience", "resources"];
+const STAFF_RATINGS = ["working_with_youngsters", "authority", ...EXTRA_STAFF_RATINGS];
+
+/** Every sixth member of the fixture staff is a woman, who works for a women's club if she has a job. */
+const isStaffWoman = (index: number) => index % 6 === 3;
+
+const staff: StaffSummary[] = (() => {
+  const next = random(1984);
+  const pick = <T,>(items: T[]) => items[Math.floor(next() * items.length)];
+  return Array.from({ length: 120 }, (_, i) => {
+    const born: FmDate = { year: 1955 + Math.floor(next() * 40), month: 1 + Math.floor(next() * 12), day: 1 + Math.floor(next() * 28) };
+    const ca = Math.round(40 + next() * 140);
+    const employed = i === 0 || next() < 0.85;
+    // A woman's first name takes the place of the one drawn, so the other fields come out as before.
+    const first = pick(FIRST);
+    return {
+      uid: 2_000_000 + i * 53,
+      name: `${isStaffWoman(i) ? FIRST_WOMEN[i % FIRST_WOMEN.length] : first} ${pick(LAST)}`,
+      fullName: null,
+      dateOfBirth: born,
+      age: ageOn(born, GAME_DATE),
+      ...withUids(pick(NATIONS), employed ? pick(CLUBS) : null, isStaffWoman(i)),
+      job: i === 0 ? 16 : employed ? pick(JOBS) : null,
+      currentAbility: ca,
+      potentialAbility: Math.min(200, ca + Math.round(next() * 30)),
+      isHuman: i === 0,
+    };
+  });
+})();
+
+/** Whether the fixture player or member of staff is a woman, as the real rows know it from the game's gender flags. */
+const womenStaff = new Set(staff.filter((_, i) => isStaffWoman(i)).map((s) => s.uid));
+const isWoman = (uid: number) => women.has(uid) || womenStaff.has(uid);
+
+/**
+ * The board of each fixture men's club, whom a release leaves at the club as the real commands do: a chairperson, and
+ * at the first club an owner too. After the others, so that the generated staff come out as before.
+ */
+staff.push(
+  ...CLUBS.map((club, i): StaffSummary => {
+    const born: FmDate = { year: 1956 + i * 3, month: 1 + i, day: 9 + i };
+    return {
+      uid: 2_100_000 + i,
+      name: `${FIRST[(i + 4) % FIRST.length]} ${LAST[(i + 7) % LAST.length]}`,
+      fullName: null,
+      dateOfBirth: born,
+      age: ageOn(born, GAME_DATE),
+      ...withUids(NATIONS[i % NATIONS.length], club),
+      job: 4,
+      currentAbility: 60 + i * 7,
+      potentialAbility: 70 + i * 7,
+      isHuman: false,
+    };
+  }),
+  {
+    uid: 2_100_100,
+    name: "Bruno Novák",
+    fullName: null,
+    dateOfBirth: { year: 1961, month: 6, day: 2 },
+    age: ageOn({ year: 1961, month: 6, day: 2 }, GAME_DATE),
+    ...withUids("Czechia", CLUBS[0]),
+    job: 66,
+    currentAbility: 90,
+    potentialAbility: 95,
+    isHuman: false,
+  },
+);
+
+/** Made-up but self-consistent profile for a fixture member of staff. */
+function staffDetails(member: StaffSummary): StaffDetails {
+  const next = random(member.uid);
+  const level = generatedAbility.get(member.uid)! / 2;
+  const attributes = Object.fromEntries([
+    ...[...STAFF_ATTRIBUTES, ...EXTRA_STAFF_ATTRIBUTES].map((key) => {
+      const raw = Math.max(1, Math.min(100, Math.round(level + (next() - 0.5) * 50)));
+      return [key, { raw, value: Math.max(1, Math.min(20, Math.floor((raw + 2) / 5))) }];
+    }),
+    ...STAFF_RATINGS.map((key) => {
+      const value = Math.round(1 + next() * 19);
+      return [key, { raw: value, value }];
+    }),
+  ]);
+  const personality = Object.fromEntries(PERSONALITY.map((key) => [key, Math.round(1 + next() * 19)]));
+  return withWritten("staff", {
+    ...member,
+    reputation: { home: Math.round(next() * 10000), current: Math.round(next() * 10000), world: Math.round(next() * 10000) },
+    personality,
+    attributes,
+    contract:
+      member.job === null
+        ? null
+        : {
+            wage: Math.round(generatedAbility.get(member.uid)! * 400 + next() * 20000),
+            signed: { year: 2026, month: 6, day: 29 },
+            expires: { year: 2027 + Math.floor(next() * 4), month: 6, day: 30 },
+            joined: { year: 2021 + Math.floor(next() * 5), month: 7, day: 1 },
+            job: member.job,
+          },
+  });
+}
+
+/** Each fixture person's current ability as generated: their made-up profile is built around it, edited or not. */
+const generatedAbility = new Map<number, number>([...players, ...staff].map((p) => [p.uid, p.currentAbility]));
+
+// Editing ---------------------------------------------------------------------------------------------------------
+
+/** The staff attributes in the order the real field table has them (coaching, mental, knowledge, medical). */
+const STAFF_ATTRIBUTE_ORDER = [
+  "attacking", "defending", "fitness", "goalkeeping", "possession", "set_pieces", "tactical", "technical",
+  "working_with_youngsters", "authority", "determination", "motivating", "people_management", "data_analysis",
+  "judging_ability", "judging_potential", "judging_staff", "negotiating", "tactical_knowledge", "physiotherapy",
+  "sports_science", ...EXTRA_STAFF_ATTRIBUTES, ...EXTRA_STAFF_RATINGS,
+];
+
+/** The international fields' keys and the profile's names for them. */
+const INTERNATIONAL = { caps: "caps", goals: "goals", u21_caps: "u21Caps", u21_goals: "u21Goals" } as const;
+
+/** The editable fields, as the real `edit_fields` lists them. */
+function fieldTable(entity: EditEntity): EditField[] {
+  const field = (
+    key: string,
+    kind: EditField["kind"],
+    min: number,
+    max: number,
+    scale: EditField["scale"] = "plain",
+  ): EditField => ({ key, entity, kind, scale, min, max, blank: null, choices: null, mass: true });
+  // A player's squad number (255: none), squad status and listing are changed one player at a time.
+  const playerContract: EditField[] = [
+    { ...field("contract.squad_number", "u8", 1, 99), blank: 255, mass: false },
+    { ...field("contract.squad_status", "u8", 1, 40), choices: [1, 2, 3, 4, 5], mass: false },
+    { ...field("contract.transfer_listed", "flag", 0, 1), mass: false },
+    { ...field("contract.loan_listed", "flag", 0, 1), mass: false },
+    field("contract.loyalty_bonus", "i32", 0, 10_000_000),
+    field("contract.happiness", "i8", -100, 100),
+    field("contract.playing_time_happiness", "i8", -100, 100),
+    field("contract.unhappiness", "u32", 0, 0),
+    ...Array.from({ length: 64 }, (_, bit) => field(`trait.${bit}`, "flag", 0, 1)),
+  ];
+  const common = [
+    field("current_ability", "u16", 1, 200),
+    field("potential_ability", "i16", 1, 200),
+  ];
+  const reputation = ["home", "current", "world"].map((key) => field(`reputation.${key}`, "u16", 0, 10_000));
+  const personality = PERSONALITY.map((key) => field(`personality.${key}`, "u8", 1, 20));
+  const contract = [field("contract.wage", "i32", 0, 10_000_000), field("contract.expires", "date", 20000101, 21001231)];
+  if (entity === "nationalTeam") {
+    // As the real table: the senior team's, then each other kind of team's (kind 3 too, which the fixture has not).
+    const kinds = [3, 9, 33, 10, 18, 11, 12];
+    return ["reputation", ...kinds.map((kind) => `team.${kind}.reputation`)].map((key) => ({
+      ...field(key, "u16", 0, 10_000),
+      mass: false,
+    }));
+  }
+  if (entity === "club") {
+    return [
+      field("reputation", "u16", 0, 10_000),
+      ...CLUB_FACILITIES.map((key) => field(`facilities.${key}`, "u8", 1, 20)),
+      field("finance.balance", "i32", -2_000_000_000, 2_000_000_000),
+      field("finance.transfer_budget", "i32", 0, 2_000_000_000),
+      field("finance.wage_budget", "i32", 0, 100_000_000),
+      field("finance.total_wage_budget", "i32", 0, 100_000_000),
+      ...["capacity", "seating", "used", "expansion"].map((key) => field(`stadium.${key}`, "u32", 0, 250_000)),
+      ...demoStadiumFieldTable(),
+    ];
+  }
+  if (entity === "player") {
+    return [
+      ...common,
+      field("height", "u16", 140, 220),
+      { ...field("nation", "pointer", 0x1_0000, 0x7fff_ffff_ffff), mass: false },
+      field("date_of_birth", "date", 19400101, 20201231),
+      { ...field("city_of_birth", "pointer", 0x1_0000, 0x7fff_ffff_ffff), mass: false },
+      { ...field("asking_price", "i32", 0, 2_000_000_000), blank: -1 },
+      ...reputation,
+      field("international.caps", "u16", 0, 1000),
+      field("international.goals", "u16", 0, 1000),
+      field("international.u21_caps", "u8", 0, 255),
+      field("international.u21_goals", "u8", 0, 255),
+      { ...field("condition", "u16", 0, 10_000, "percent"), rawFitnessMax: 12_749 },
+      { ...field("match_sharpness", "u16", 3_500, 10_000, "percent"), rawFitnessMax: 12_749 },
+      field("jadedness", "i16", -500, 1000),
+      field("morale", "u8", 1, 20),
+      ...ATTRIBUTES.map((key) => field(`attribute.${key}`, "u8", 1, 100, "attribute")),
+      // The game no longer plays a sweeper, so the real table leaves it out.
+      ...POSITIONS.filter((key) => key !== "sw").map((key) => field(`position.${key}`, "u8", 1, 20)),
+      ...personality,
+      ...contract,
+      ...playerContract,
+      // One player at a time, and only to a day after the game's date.
+      { ...field("loan.expires", "date", 20000101, 21001231), mass: false },
+      // Pounds; -1 is none, which a recall writes.
+      { ...field("loan.option_fee", "i32", 0, 2_000_000_000), mass: false, blank: -1 },
+    ];
+  }
+  return [
+    ...common,
+    ...reputation,
+    { ...field("nation", "pointer", 0x1_0000, 0x7fff_ffff_ffff), mass: false },
+    ...STAFF_ATTRIBUTE_ORDER.map((key) =>
+      STAFF_RATINGS.includes(key)
+        ? field(`attribute.${key}`, "u8", 1, 20)
+        : field(`attribute.${key}`, "u8", 0, 100, "attribute"),
+    ),
+    ...personality,
+    ...contract,
+  ];
+}
+
+/** The club facilities the editor changes, in the order of the real field table. */
+const CLUB_FACILITIES = ["training", "youth_facilities", "youth_coaching", "youth_recruitment", "corporate"];
+
+/** The finance fields' keys and the profile's names for them. */
+const FINANCE = {
+  balance: "balance",
+  transfer_budget: "transferBudget",
+  wage_budget: "wageBudget",
+  total_wage_budget: "totalWageBudget",
+} as const;
+
+/**
+ * Values written through the editor that the generated profiles would not show, by `entity:uid` and field key.
+ * Ability and position ratings go straight into the list rows instead, which the profiles are built from.
+ */
+const written = new Map<string, FieldValues>();
+
+/** The city of birth a fixture player was set to, if he was. */
+const writtenCity = (uid: number): number | undefined => written.get(`player:${uid}`)?.city_of_birth;
+
+/**
+ * Every change written in this browser session, oldest first, after the earlier ones the real app would list from its
+ * history file (see `earlier`): the preview shows each kind of row they make.
+ */
+const changes: LoggedChange[] = (() => {
+  const day = 86_400_000;
+  const club = (index: number) => ({ name: CLUBS[index], uid: 500 + index * 7 });
+  const [first, second, third, fourth, fifth, sixth, seventh] = players;
+  const earlier = (rest: Omit<LoggedChange, "id" | "earlier" | "batch" | "undoneAt">): Omit<LoggedChange, "id"> => ({
+    ...rest,
+    earlier: true,
+    batch: null,
+    undoneAt: null,
+  });
+  // A mass edit of the players' morale, made on its own number so that the mass edits of this session cannot clash.
+  const morale = (player: PlayerSummary, inGame: boolean) =>
+    earlier({
+      at: Date.now() - 4 * day,
+      name: player.name,
+      entity: "player",
+      uid: player.uid,
+      field: "morale",
+      old: 12,
+      new: 20,
+      undoable: true,
+      inGame,
+    });
+  const entries: Omit<LoggedChange, "id">[] = [
+    earlier({
+      at: Date.now() - 6 * day,
+      name: first.name,
+      entity: "player",
+      uid: first.uid,
+      field: "attribute.finishing",
+      old: 70,
+      new: 85,
+      undoable: true,
+      inGame: true,
+    }),
+    earlier({
+      at: Date.now() - 5 * day,
+      name: CLUBS[0],
+      entity: "club",
+      uid: club(0).uid,
+      field: "finance.transfer_budget",
+      old: 5_000_000,
+      new: 25_000_000,
+      undoable: true,
+      inGame: false,
+    }),
+    earlier({
+      at: Date.now() - 4.5 * day,
+      name: second.name,
+      entity: "player",
+      uid: second.uid,
+      field: "club",
+      old: club(1).uid,
+      new: club(2).uid,
+      moved: { from: club(1).name, to: club(2).name },
+      undoable: false,
+      inGame: true,
+    }),
+    earlier({
+      at: Date.now() - 4.2 * day,
+      name: third.name,
+      entity: "player",
+      uid: third.uid,
+      field: "nation",
+      old: 0,
+      new: 0,
+      objects: { from: "England", to: "Türkiye" },
+      undoable: false,
+      inGame: true,
+    }),
+    { ...morale(fourth, true), batch: 9001 },
+    { ...morale(fifth, false), batch: 9001 },
+    { ...morale(sixth, true), batch: 9001 },
+    {
+      // This one was taken back, from this app, a day after it was written.
+      ...earlier({
+        at: Date.now() - 3 * day,
+        name: seventh.name,
+        entity: "player",
+        uid: seventh.uid,
+        field: "attribute.passing",
+        old: 60,
+        new: 90,
+        undoable: true,
+      }),
+      undoneAt: Date.now() - 2 * day,
+    },
+    // What the search looks through beside a person's name: the names of a rename, of a stadium, the clubs of a staff
+    // move, and the players of a captaincy.
+    earlier({
+      at: Date.now() - 2.8 * day,
+      name: players[7].name,
+      entity: "player",
+      uid: players[7].uid,
+      field: "name.last",
+      old: 4,
+      new: 9,
+      personName: { from: "Kaya", to: "Yıldırım" },
+      undoable: false,
+    }),
+    earlier({
+      at: Date.now() - 2.6 * day,
+      name: CLUBS[3],
+      entity: "club",
+      uid: club(3).uid,
+      field: "stadium.name",
+      old: 13,
+      new: 14,
+      stadium: { from: "Lindenau Park", to: "Lindenau Arena" },
+      undoable: false,
+    }),
+    earlier({
+      at: Date.now() - 2.4 * day,
+      name: staff[1].name,
+      entity: "staff",
+      uid: staff[1].uid,
+      field: "club",
+      old: club(2).uid,
+      new: club(0).uid,
+      moved: { from: club(2).name, to: club(0).name },
+      undoable: false,
+      inGame: true,
+    }),
+    earlier({
+      at: Date.now() - 2.2 * day,
+      name: CLUBS[1],
+      entity: "club",
+      uid: club(1).uid,
+      field: "vice_captain",
+      old: players[3].uid,
+      new: players[8].uid,
+      captaincy: { team: 0, kind: 0, ageLimit: null, from: players[3].name, to: players[8].name, swapped: false },
+      undoable: false,
+    }),
+  ];
+  // `?longlog` puts a long history before those: twenty thousand changes, half of them in a hundred mass edits of a
+  // hundred changes each, none in reach of an Undo, to see the paging and the search work through a log that long.
+  if (new URLSearchParams(window.location.search).has("longlog")) {
+    const fieldsOf = [
+      { field: "attribute.finishing", old: 55, new: 80 },
+      { field: "attribute.passing", old: 60, new: 75 },
+      { field: "morale", old: 10, new: 20 },
+      { field: "contract.wage", old: 40_000, new: 90_000 },
+    ];
+    const long: Omit<LoggedChange, "id">[] = [];
+    // Oldest first, as the log is kept.
+    for (let i = 19_999; i >= 0; i--) {
+      const player = players[i % players.length];
+      long.push({
+        at: Date.now() - 10 * day - i * 60_000,
+        name: player.name,
+        entity: "player",
+        uid: player.uid,
+        ...fieldsOf[i % fieldsOf.length],
+        undoneAt: i % 7 === 0 ? Date.now() - 9 * day : null,
+        batch: i % 2 === 0 ? 9100 + Math.floor(i / 200) : null,
+        earlier: true,
+        undoable: false,
+        ...(i % 7 === 0 || i % 5 === 0 ? {} : { inGame: i % 3 !== 0 }),
+      });
+    }
+    entries.unshift(...long);
+  }
+  return entries.map((entry, index): LoggedChange => ({ ...entry, id: index + 1 }));
+})();
+
+/** A generated profile with the values written through the editor on top. */
+function withWritten<D extends PlayerDetails | StaffDetails>(entity: Entity, d: D): D {
+  for (const [key, value] of Object.entries(written.get(`${entity}:${d.uid}`) ?? {})) {
+    const [group, name = ""] = key.split(".");
+    switch (group) {
+      case "attribute":
+        d.attributes[name] = STAFF_RATINGS.includes(name)
+          ? { raw: value, value }
+          : { raw: value, value: Math.max(1, Math.min(20, Math.floor((value + 2) / 5))) };
+        break;
+      case "personality":
+        d.personality[name] = value;
+        break;
+      case "reputation":
+        d.reputation[name as "home" | "current" | "world"] = value;
+        break;
+      case "height":
+        (d as PlayerDetails).heightCm = value;
+        break;
+      case "asking_price":
+        (d as PlayerDetails).askingPrice = value === -1 ? null : value;
+        break;
+      case "condition":
+        (d as PlayerDetails).condition = value;
+        break;
+      case "match_sharpness":
+        (d as PlayerDetails).matchSharpness = value;
+        break;
+      case "jadedness":
+        (d as PlayerDetails).jadedness = value;
+        break;
+      case "morale":
+        (d as PlayerDetails).morale = value;
+        break;
+      case "trait": {
+        const traits = new Set((d as PlayerDetails).traits);
+        if (value === 1) traits.add(Number(name));
+        else traits.delete(Number(name));
+        (d as PlayerDetails).traits = [...traits].sort((a, b) => a - b);
+        break;
+      }
+      case "international":
+        (d as PlayerDetails).international[INTERNATIONAL[name as keyof typeof INTERNATIONAL]] = value;
+        break;
+      case "loan": {
+        const loan = (d as PlayerDetails).loan;
+        if (name === "option_fee" && loan?.terms) {
+          loan.terms.optionFee = value < 0 ? null : value;
+        }
+        if (name === "expires" && loan) {
+          loan.until = dateFromNumber(value);
+          loan.ends = loanEnd(loan.until);
+          // As the real app tells: the end this session's recall wrote, not undone.
+          loan.recalled = changes.some(
+            (c) => c.uid === d.uid && c.field === "loan.expires" && c.undoneAt === null && c.new === value,
+          );
+        }
+        break;
+      }
+      case "contract":
+        if (d.contract && name === "wage") {
+          d.contract.wage = value;
+        } else if (d.contract && name === "expires") {
+          d.contract.expires = dateFromNumber(value);
+        } else if (entity === "player" && (d as PlayerDetails).contract) {
+          // What only a player's contract has.
+          const contract = (d as PlayerDetails).contract!;
+          if (name === "squad_number") {
+            contract.squadNumber = value === 255 ? null : value;
+          } else if (name === "squad_status") {
+            contract.squadStatus = value;
+          } else if (name === "transfer_listed") {
+            contract.transferListed = value === 1;
+          } else if (name === "loan_listed") {
+            contract.loanListed = value === 1;
+          } else if (name === "loyalty_bonus") {
+            contract.loyaltyBonus = value;
+          } else if (name === "happiness") {
+            contract.happiness = value;
+          } else if (name === "playing_time_happiness") {
+            contract.playingTimeHappiness = value;
+          } else if (name === "unhappiness") {
+            // Only ever set to none; an undo puts the count back, which the made-up list cannot follow.
+            contract.concerns = value === 0 ? [] : contract.concerns;
+          }
+        }
+        break;
+    }
+  }
+  return d;
+}
+
+/** A generated club profile with the values written through the editor on top. */
+function withWrittenClub(d: ClubDetails): ClubDetails {
+  for (const [key, value] of Object.entries(written.get(`club:${d.uid}`) ?? {})) {
+    const [group, name = ""] = key.split(".");
+    if (group === "facilities") {
+      d.facilities[name] = value;
+    } else if (group === "finance" && d.finances) {
+      d.finances[FINANCE[name as keyof typeof FINANCE]] = value;
+    } else if (group === "stadium" && d.stadium && ["capacity", "seating", "used", "expansion"].includes(name)) {
+      d.stadium[name as "capacity" | "seating" | "used" | "expansion"] = value;
+    }
+  }
+  return d;
+}
+
+/** A failure the way the real commands report one (see `Failure`): its code, the values it names, and the English. */
+function failure(code: string, message: string, params: Record<string, string | number> = {}): Failure {
+  return { code, message, params: Object.fromEntries(Object.entries(params).map(([key, value]) => [key, String(value)])) };
+}
+
+/** The real commands' failure for a player, member of staff or club the lists do not have. */
+const notFound = (entity: Entity, uid: number) => failure("app.notFound", `No ${entity} with id ${uid}`, { entity, uid });
+
+/** The profile of the person or club, or an error like the real commands give. */
+function profileOf(entity: Entity, uid: number): PlayerDetails | StaffDetails | ClubDetails {
+  const found =
+    entity === "player"
+      ? players.find((p) => p.uid === uid)
+      : entity === "staff"
+        ? staff.find((s) => s.uid === uid)
+        : clubs.find((c) => c.uid === uid);
+  if (!found) {
+    throw notFound(entity, uid);
+  }
+  return entity === "player"
+    ? details(found as PlayerSummary)
+    : entity === "staff"
+      ? staffDetails(found as StaffSummary)
+      : clubDetails(found as ClubSummary);
+}
+
+/**
+ * The stored value of every field that can be edited now, as `read_values` returns it: like the real command it
+ * leaves out contract fields without a contract, a contract end that is not set, and a club's missing finances.
+ */
+function currentValues(entity: EditEntity, uid: number): FieldValues {
+  if (entity === "nationalTeam") {
+    const team = nationals.find((n) => n.uid === uid);
+    if (!team || team.reputation === null) {
+      return {};
+    }
+    const youth = Object.fromEntries(NATIONAL_YOUTH.map(({ kind }) => [`team.${kind}.reputation`, youthReputation(team, kind)]));
+    return { reputation: team.reputation, ...youth };
+  }
+  const d = profileOf(entity, uid);
+  const person = d as PlayerDetails & StaffDetails;
+  const club = d as ClubDetails;
+  const stadium = entity === "club" && club.stadium ? demoStadiumDetails(club) : null;
+  const value = (key: string): number | null | undefined => {
+    const [group, name = ""] = key.split(".");
+    switch (group) {
+      case "current_ability":
+        return person.currentAbility;
+      case "potential_ability":
+        return person.potentialAbility;
+      case "height":
+        return person.heightCm;
+      case "date_of_birth":
+        return person.dateOfBirth && numberFromDate(person.dateOfBirth);
+      case "nation":
+        return person.nation === null ? undefined : nationAddress(person.nation);
+      case "city_of_birth":
+        return cityOf({ uid, nation: person.nation })?.address;
+      case "asking_price":
+        return (person as PlayerDetails).askingPrice ?? -1;
+      case "condition":
+        return person.condition;
+      case "match_sharpness":
+        return person.matchSharpness;
+      case "jadedness":
+        return (person as PlayerDetails).jadedness;
+      case "morale":
+        return person.morale;
+      case "trait":
+        return Number((person as PlayerDetails).traits.includes(Number(name)));
+      case "reputation":
+        return entity === "club" ? club.reputation : person.reputation[name as "home" | "current" | "world"];
+      case "international":
+        return person.international[INTERNATIONAL[name as keyof typeof INTERNATIONAL]];
+      case "attribute":
+        return person.attributes[name].raw;
+      case "position":
+        return person.positionRatings[name];
+      case "personality":
+        return person.personality[name];
+      case "contract": {
+        const contract = (person as PlayerDetails).contract;
+        switch (name) {
+          case "wage":
+            return person.contract?.wage;
+          case "expires":
+            return person.contract?.expires && numberFromDate(person.contract.expires);
+          // Only a player's contract has these; the real table offers them for players only.
+          case "squad_number":
+            return contract && (contract.squadNumber ?? 255);
+          case "squad_status":
+            return contract?.squadStatus;
+          case "transfer_listed":
+            return contract && Number(contract.transferListed);
+          case "loan_listed":
+            return contract && Number(contract.loanListed);
+          case "loyalty_bonus":
+            return contract?.loyaltyBonus;
+          case "happiness":
+            return contract?.happiness;
+          case "playing_time_happiness":
+            return contract?.playingTimeHappiness;
+          case "unhappiness":
+            return contract && contract.concerns.length > 0 ? contract.concerns.length : undefined;
+        }
+        return undefined;
+      }
+      case "loan": {
+        const loan = (person as PlayerDetails).loan;
+        if (name === "option_fee") {
+          return loan?.terms ? (loan.terms.optionFee ?? -1) : undefined;
+        }
+        return name === "expires" ? loan?.until && numberFromDate(loan.until!) : undefined;
+      }
+      case "facilities":
+        return club.facilities[name];
+      case "finance":
+        return club.finances?.[FINANCE[name as keyof typeof FINANCE]];
+      case "stadium": {
+        if (!stadium) return undefined;
+        const [section, index, property] = key.slice("stadium.".length).split(".");
+        if (section === "stand") {
+          const stand = stadium.stands?.find(stand => stand.index === Number(index));
+          if (!stand) return undefined;
+          return Number(stand[property as "capacity" | "roof" | "seats" | "tunnel"]);
+        }
+        const stored = stadium.fields[name];
+        if (typeof stored === "object") return numberFromDate(stored);
+        if (stored !== undefined) {
+          if (name === "latitude" || name === "longitude") return Math.round(Number(stored) * 1_000_000);
+          return isPitchDimension(key) ? Math.round(Number(stored) * 10) : Number(stored);
+        }
+        return club.stadium?.[name as "capacity" | "seating" | "used" | "expansion"];
+      }
+    }
+    throw new Error(`No fixture value for ${key}`);
+  };
+  return Object.fromEntries(
+    fieldTable(entity).flatMap((f) => {
+      const v = value(f.key);
+      return v === null || v === undefined ? [] : [[f.key, v]];
+    }),
+  );
+}
+
+/** Stores `value` as the game would: what the list rows show in them, the rest on top of the profiles. */
+function writeValue(entity: EditEntity, uid: number, key: string, value: number): void {
+  if (entity === "nationalTeam") {
+    const team = nationals.find((n) => n.uid === uid);
+    if (team && key === "reputation") {
+      team.reputation = value;
+    } else if (team && /^team\.\d+\.reputation$/.test(key)) {
+      youthReputations.set(`${team.uid}.${key.split(".")[1]}`, value);
+    }
+    return;
+  }
+  const [group, name = ""] = key.split(".");
+  if (entity === "club") {
+    const club = clubs.find((c) => c.uid === uid);
+    if (club && key === "reputation") {
+      club.reputation = value;
+      return;
+    }
+  } else {
+    const row = entity === "player" ? players.find((p) => p.uid === uid) : staff.find((s) => s.uid === uid);
+    if (row && group === "current_ability") {
+      row.currentAbility = value;
+      return;
+    }
+    if (row && group === "potential_ability") {
+      row.potentialAbility = value;
+      return;
+    }
+    if (entity === "player" && group === "position") {
+      ratings[uid][name] = value;
+      (row as PlayerSummary).positions = playablePositions(ratings[uid]);
+      return;
+    }
+    const nation = key === "nation" ? nationAt(value) : undefined;
+    if (row && nation !== undefined) {
+      // The list row has the nation, and the profile is built from the row.
+      Object.assign(row, { nation, nationUid: 1000 + NATIONS.indexOf(nation) });
+      return;
+    }
+    if (entity === "player" && key === "date_of_birth") {
+      // The list row has the birth date and the age, and the profile is built from the row.
+      const player = row as PlayerSummary;
+      player.dateOfBirth = dateFromNumber(value);
+      player.age = player.dateOfBirth && ageOn(player.dateOfBirth, GAME_DATE);
+      return;
+    }
+    if (entity === "player" && key === "contract.expires") {
+      // The list row has the contract end, and the profile builds its contract from the row.
+      (row as PlayerSummary).contractExpires = dateFromNumber(value);
+      return;
+    }
+  }
+  const slot = `${entity}:${uid}`;
+  written.set(slot, { ...written.get(slot), [key]: value });
+}
+
+/** `apply_edits`: every edit is checked and written on its own, like the real command, with the same messages. */
+function applyEdits(entity: EditEntity, uid: number, edits: FieldEdit[], expectedStadium?: string): ApplyReport {
+  const name =
+    entity === "nationalTeam"
+      ? (nationals.find((n) => n.uid === uid) ?? (() => { throw failure("app.notFound", `No national team ${uid}`, { entity, uid }); })()).name
+      : profileOf(entity, uid).name;
+  const report: ApplyReport = { applied: [], failed: [] };
+  const stadiumMatches = expectedStadium === undefined || expectedStadium === `demo-stadium-${uid}`;
+  for (const edit of edits) {
+    if (edit.field.startsWith("stadium.") && !stadiumMatches) {
+      report.failed.push({ ...edit, error: failure("stadium.changed", "O estádio do clube mudou.") });
+      continue;
+    }
+    const field = fieldTable(entity).find((f) => f.key === edit.field);
+    if (!field) {
+      const message = `${entity} has no editable field ${edit.field}`;
+      report.failed.push({ ...edit, error: failure("edit.unknownField", message, { entity, field: edit.field }) });
+      continue;
+    }
+    // Like the real command, a field also takes its blank (a squad number of 255 is none).
+    const rawMax = edit.rawFitness && edit.expected !== undefined ? field.rawFitnessMax : undefined;
+    const max = rawMax ?? field.max;
+    if (rawMax !== undefined && edit.value > field.max && frozenFitness.has(uid)) {
+      report.failed.push({ ...edit, error: failure("edit.fitnessFrozen", "Desative o congelamento da condição física do jogador antes de aplicar este valor.") });
+      continue;
+    }
+    const takes = edit.value === field.blank || (edit.value >= field.min && edit.value <= max);
+    if (!Number.isInteger(edit.value) || !takes) {
+      const message = `${edit.value} is not a valid ${field.key}; it takes ${field.min} to ${max}`;
+      const params = { field: field.key, value: edit.value, min: field.min, max };
+      report.failed.push({ ...edit, error: failure("edit.outOfRange", message, params) });
+      continue;
+    }
+    if (field.kind === "date" && dateFromNumber(edit.value) === null) {
+      const message = `${edit.value} is not a date for ${field.key}`;
+      report.failed.push({ ...edit, error: failure("edit.notADate", message, { field: field.key, value: edit.value }) });
+      continue;
+    }
+    // Like the real command, a loan ends on a day the game is yet to finish: today or later.
+    const today = numberFromDate(GAME_DATE);
+    if (field.key === "loan.expires" && edit.value < today) {
+      const message = `${edit.value} is not a valid ${field.key}; it takes ${today} to ${field.max}`;
+      const params = { field: field.key, value: edit.value, min: today, max: field.max };
+      report.failed.push({ ...edit, error: failure("edit.outOfRange", message, params) });
+      continue;
+    }
+    const old: number | undefined = currentValues(entity, uid)[field.key];
+    if (old === undefined) {
+      // No contract, no contract end, or a club without full finances.
+      const message = `${field.key} cannot be changed here: its record is missing or does not check out`;
+      report.failed.push({ ...edit, error: failure("edit.noRecord", message, { field: field.key }) });
+      continue;
+    }
+    if (edit.expected !== undefined && edit.expected !== old) {
+      report.failed.push({ ...edit, error: failure("edit.conflict", "O valor mudou desde a última leitura.", {
+        field: field.key, expected: edit.expected, found: old,
+      }) });
+      continue;
+    }
+    if (old === edit.value) {
+      continue;
+    }
+    writeValue(entity, uid, field.key, edit.value);
+    const logged: LoggedChange = {
+      id: changes.length + 1,
+      at: Date.now(),
+      name,
+      entity,
+      uid,
+      field: field.key,
+      old,
+      new: edit.value,
+      undoneAt: null,
+      earlier: false,
+      undoable: true,
+      batch: null,
+    };
+    changes.push(logged);
+    report.applied.push({ ...logged });
+  }
+  return report;
+}
+
+/**
+ * `recall_loan`: the loan now ends on the game's date, its last day, written and logged like an edit of
+ * `loan.expires`; null when it ends then already.
+ */
+function recallLoan(uid: number): LoggedChange | null {
+  const option = currentValues("player", uid)["loan.option_fee"];
+  const report = applyEdits("player", uid, [{ field: "loan.expires", value: numberFromDate(GAME_DATE) }]);
+  if (report.failed.length > 0) {
+    throw report.failed[0].error;
+  }
+  const logged = report.applied[0] ?? null;
+  // As the real command: the loan's option to buy goes too, noted on the recall, whose undo writes it back.
+  if (logged && option !== undefined && option >= 0) {
+    writeValue("player", uid, "loan.option_fee", -1);
+    const entry = changes.find((c) => c.id === logged.id)!;
+    entry.recall = { optionFee: option };
+    return { ...entry };
+  }
+  return logged;
+}
+
+/**
+ * `extend_contract`: the contract runs `years` longer, the day it ends moved on by as many years, written and logged
+ * like an edit of `contract.expires`, with the real command's checks and messages.
+ */
+function extendContract(entity: Entity, uid: number, years: number): LoggedChange {
+  const key = "contract.expires";
+  if (!Number.isInteger(years) || years < 1 || years > MOST_YEARS) {
+    const message = `${years} is not a valid ${key}; it takes 1 to ${MOST_YEARS}`;
+    throw failure("edit.outOfRange", message, { field: key, value: years, min: 1, max: MOST_YEARS });
+  }
+  const old = currentValues(entity, uid)[key];
+  if (old === undefined) {
+    throw failure("edit.noRecord", `${key} cannot be changed here: its record is missing or does not check out`, {
+      field: key,
+    });
+  }
+  const ends = dateFromNumber(old);
+  if (ends === null) {
+    throw failure("edit.unset", `${key} is not set in the game, so it is left alone`, { field: key });
+  }
+  const report = applyEdits(entity, uid, [{ field: key, value: numberFromDate(plusYears(ends, years)) }]);
+  if (report.failed.length > 0) {
+    throw report.failed[0].error;
+  }
+  return report.applied[0];
+}
+
+/** `undo_change`: writes the old value back unless the value has changed since. */
+// Staff: moves and jobs ---------------------------------------------------------------------------------------------
+
+/** The jobs the real `change_staff_job` gives, by contract code: the last two a director of football's and a manager's. */
+const STAFF_JOBS = [2, 20, 22, 26, 34, 60, 62, 64, 12, 38, 40, 46, 48, 50, 14, 44, 58, 86, 88, 10, 16];
+
+/** The job code of a director of football, whom a club has one of at most. */
+const DIRECTOR_OF_FOOTBALL = 10;
+
+/** The job code of a manager, whom a club's senior team has one of at most. */
+const MANAGER = 16;
+
+/** What a member of staff's move, new job or signing changed, by the change's id: his list row as it was. */
+const staffUndo = new Map<number, Pick<StaffSummary, "club" | "clubUid" | "job">>();
+
+/** The member of staff `uid`, checked as the real commands check him before a move, a new job or a signing. */
+function movableStaff(uid: number, signing = false): StaffSummary {
+  const member = staff.find((s) => s.uid === uid);
+  if (!member) {
+    throw notFound("staff", uid);
+  }
+  if (member.isHuman) {
+    throw failure("staff.you", "this is you, the human manager");
+  }
+  if (member.clubUid === null && !signing) {
+    throw failure("staff.unemployed", "the member of staff has no club");
+  }
+  return member;
+}
+
+/** A plan from one club to another: every one but a signing. */
+type ClubToClub = MovePreview & { from: ClubName };
+
+/** A job the real commands give: refused otherwise, with their message. */
+function givenJob(code: number | null): number {
+  if (code === null || !STAFF_JOBS.includes(code)) {
+    throw failure("staff.job", `job ${code} is not one the editor gives or takes away`, { job: code ?? 0 });
+  }
+  return code;
+}
+
+/**
+ * Refuses a director of football or a manager for a club that has one, other than `member`, as the real commands do:
+ * never the human manager's place.
+ */
+function checkDirector(clubUid: number, job: number, member: StaffSummary) {
+  const director = staff.find((s) => s.clubUid === clubUid && s.job === DIRECTOR_OF_FOOTBALL && s.uid !== member.uid);
+  if (job === DIRECTOR_OF_FOOTBALL && director) {
+    const message = `the club has a director of football already (the member of staff with id ${director.uid})`;
+    throw failure("staff.directorTaken", message, { uid: director.uid, name: director.name });
+  }
+  const manager = staff.find((s) => s.clubUid === clubUid && s.job === MANAGER && s.uid !== member.uid);
+  if (job === MANAGER && manager?.isHuman) {
+    throw failure("staff.yourClub", "you manage this club; give this member of staff another job there");
+  }
+  if (job === MANAGER && manager) {
+    const message = `the club has a manager already (the member of staff with id ${manager.uid})`;
+    throw failure("staff.managerTaken", message, { uid: manager.uid, name: manager.name });
+  }
+}
+
+/**
+ * `plan_staff_move`: the checks of the real command that the fixtures can have, with its messages. One with no club is
+ * signed as `job`, on a contract made on `terms`.
+ */
+function planStaffMove(uid: number, clubUid: number, job?: number, terms: MoveTerms = {}): MovePreview {
+  const member = movableStaff(uid, true);
+  const to = clubs.find((c) => c.uid === clubUid);
+  if (!to) {
+    throw notFound("club", clubUid);
+  }
+  if (member.clubUid === null) {
+    if (job === undefined) {
+      throw failure("staff.noJob", "choose the job the member of staff takes at the club");
+    }
+    if (to.women !== isWoman(member.uid)) {
+      throw failure("move.menAndWomen", "one club is a men's club and the other a women's club");
+    }
+    checkDirector(clubUid, givenJob(job), member);
+    const staffContract = { wage: terms.wage ?? 2_500, expires: terms.expires ?? 20290630 };
+    return { to: { uid: to.uid, name: to.name }, staffContract };
+  }
+  if (member.clubUid === clubUid) {
+    throw failure("move.sameClub", "the player is at this club already");
+  }
+  const from = clubs.find((c) => c.uid === member.clubUid)!;
+  if (to.women !== from.women) {
+    throw failure("move.menAndWomen", "one club is a men's club and the other a women's club");
+  }
+  if (job !== undefined) {
+    givenJob(member.job);
+    givenJob(job);
+  }
+  checkDirector(clubUid, job ?? member.job ?? 0, member);
+  return { from: { uid: from.uid, name: from.name }, to: { uid: to.uid, name: to.name } };
+}
+
+/** Logs a member of staff's move or new job, as the real commands do, keeping his row as it was for undoing it. */
+function logStaff(member: StaffSummary, field: string, old: number, value: number, moved?: LoggedChange["moved"]) {
+  const id = changes.length + 1;
+  const logged: LoggedChange = {
+    id,
+    at: Date.now(),
+    name: member.name,
+    entity: "staff",
+    uid: member.uid,
+    field,
+    old,
+    new: value,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+    ...(moved && { moved }),
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+function moveStaff(uid: number, clubUid: number, job?: number, terms: MoveTerms = {}): LoggedChange {
+  const preview = planStaffMove(uid, clubUid, job, terms);
+  const member = staff.find((s) => s.uid === uid)!;
+  const was = { club: member.club, clubUid: member.clubUid, job: member.job };
+  staffUndo.set(changes.length + 1, was);
+  member.club = preview.to.name;
+  member.clubUid = preview.to.uid;
+  member.job = job ?? member.job;
+  const moved = { ...(preview.from && { from: preview.from.name }), to: preview.to.name };
+  return logStaff(member, "club", preview.from?.uid ?? 0, preview.to.uid, moved);
+}
+
+function changeStaffJob(uid: number, job: number): LoggedChange {
+  const member = movableStaff(uid);
+  givenJob(member.job);
+  givenJob(job);
+  checkDirector(member.clubUid!, job, member);
+  const was = { club: member.club, clubUid: member.clubUid, job: member.job };
+  staffUndo.set(changes.length + 1, was);
+  const old = member.job!;
+  member.job = job;
+  return logStaff(member, "contract.job", old, job);
+}
+
+// Staff: releases ---------------------------------------------------------------------------------------------------
+
+/**
+ * `plan_staff_release`: the checks of the real command that the fixtures can have, with its messages (the board's job
+ * is not one the editor gives); names the club.
+ */
+function planStaffRelease(uid: number): ClubName {
+  const member = movableStaff(uid);
+  if (!STAFF_JOBS.includes(member.job ?? 0)) {
+    const job = member.job ?? 0;
+    throw failure("staff.job", `the editor does not yet move staff whose job is ${job}, or give that job`, { job });
+  }
+  const from = clubs.find((c) => c.uid === member.clubUid)!;
+  return { uid: from.uid, name: from.name };
+}
+
+/**
+ * `release_staff`: the fixture member of staff leaves the club with no contract, logged as a change of his `club` to 0,
+ * in the batch `batch` when the whole staff is released.
+ */
+function releaseStaff(uid: number, batch: number | null = null): LoggedChange {
+  const from = planStaffRelease(uid);
+  const member = staff.find((s) => s.uid === uid)!;
+  staffUndo.set(changes.length + 1, { club: member.club, clubUid: member.clubUid, job: member.job });
+  Object.assign(member, { club: null, clubUid: null, job: null });
+  const logged = logStaff(member, "club", from.uid, 0, { from: from.name });
+  changes[changes.length - 1].batch = batch;
+  return { ...logged, batch };
+}
+
+/** `club_staff`: the fixture club's staff, you first and then the best, each with why Release all staff leaves them. */
+function clubStaffRows(clubUid: number): ClubStaffRow[] {
+  if (!clubs.some((c) => c.uid === clubUid)) {
+    throw notFound("club", clubUid);
+  }
+  return staff
+    .filter((s) => s.clubUid === clubUid)
+    .sort((a, b) => Number(b.isHuman) - Number(a.isHuman) || b.currentAbility - a.currentAbility)
+    .map((member) => {
+      try {
+        planStaffRelease(member.uid);
+        return { ...member, stays: null };
+      } catch (e) {
+        // `planStaffRelease` fails the way the real command does, with a failure.
+        return { ...member, stays: e as Failure };
+      }
+    });
+}
+
+/** `release_club_staff`: every fixture member of staff of the club that can be released, released as one batch. */
+function releaseClubStaff(clubUid: number): MassReport {
+  const batch = nextMassId++;
+  const report: MassReport = { batch, applied: 0, failed: [] };
+  for (const row of clubStaffRows(clubUid).filter((row) => row.stays === null)) {
+    releaseStaff(row.uid, batch);
+    report.applied++;
+  }
+  return report;
+}
+
+/**
+ * `plan_club_staff_move`: the fixture club's staff as moving all of them to the club `toUid` would leave them, the
+ * manager first, each with why they stay: as for a release, a place at `toUid` taken, or taken by one of them before.
+ */
+function planClubStaffMove(clubUid: number, toUid: number): ClubStaffRow[] {
+  const from = clubs.find((c) => c.uid === clubUid);
+  const to = clubs.find((c) => c.uid === toUid);
+  if (!from || !to) {
+    throw notFound("club", from ? toUid : clubUid);
+  }
+  if (clubUid === toUid) {
+    throw failure("move.sameClub", "the player is at this club already");
+  }
+  if (from.women !== to.women) {
+    throw failure("move.menAndWomen", "one club is a men's club and the other a women's club");
+  }
+  const members = staff
+    .filter((s) => s.clubUid === clubUid)
+    .sort((a, b) => Number(b.job === MANAGER) - Number(a.job === MANAGER));
+  // Who takes the new club's place for a manager or a director of football, by job.
+  const taken = new Map<number, StaffSummary>();
+  return members.map((member) => {
+    try {
+      planStaffRelease(member.uid);
+      planStaffMove(member.uid, toUid);
+      const job = member.job ?? 0;
+      const first = taken.get(job);
+      if (first) {
+        const [code, what] =
+          job === MANAGER ? ["staff.managerTaken", "a manager"] : ["staff.directorTaken", "a director of football"];
+        const message = `the club has ${what} already (the member of staff with id ${first.uid})`;
+        throw failure(code, message, { uid: first.uid, name: first.name });
+      }
+      if (job === MANAGER || job === DIRECTOR_OF_FOOTBALL) {
+        taken.set(job, member);
+      }
+      return { ...member, stays: null };
+    } catch (e) {
+      // The checks fail the way the real commands do, with a failure.
+      return { ...member, stays: e as Failure };
+    }
+  });
+}
+
+/** `move_club_staff`: every fixture member of staff of the club that the plan moves, moved as one batch. */
+function moveClubStaff(clubUid: number, toUid: number): MassReport {
+  const batch = nextMassId++;
+  const report: MassReport = { batch, applied: 0, failed: [] };
+  for (const row of planClubStaffMove(clubUid, toUid).filter((row) => row.stays === null)) {
+    moveStaff(row.uid, toUid);
+    changes[changes.length - 1].batch = batch;
+    report.applied++;
+  }
+  return report;
+}
+
+function undoChange(id: number): LoggedChange {
+  const entry = changes.find((c) => c.id === id);
+  if (!entry) {
+    throw failure("app.noChange", `No change ${id}`, { id });
+  }
+  if (entry.undoneAt !== null) {
+    throw failure("app.alreadyUndone", "This change has already been undone.");
+  }
+  if (!entry.undoable) {
+    throw failure(
+      "app.historyOnly",
+      "This change was made before the app last connected, and undoing it needed the game's memory as it was then: change it back by hand.",
+    );
+  }
+  if (entry.source === "Geração de Ouro" && currentValues("player", entry.uid).current_ability > entry.old) {
+    throw failure("youth.goldenGeneration", "O CA atual já supera o PA anterior.");
+  }
+  if (entry.earlier) {
+    // An earlier change is written back as a new edit would be, but the mock has no memory of the game as it was: it
+    // puts the old value back without looking at what the game holds.
+    writeValue(entry.entity, entry.uid, entry.field, entry.old);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  const prizeStage = prizeUndo.get(entry.id);
+  if (prizeStage) {
+    // The real Undo writes the stage's settings back as they were, for every club in the league.
+    const place = Number(entry.field.split(".")[2]);
+    if (Number.isInteger(place)) {
+      prizeStage.byPosition[place - 1] = entry.old;
+    } else {
+      prizeStage[entry.field.slice("prize.".length) as "win" | "draw" | "loss"] = entry.old;
+    }
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  const staffRow = entry.entity === "staff" ? staffUndo.get(entry.id) : undefined;
+  if (staffRow) {
+    Object.assign(staff.find((s) => s.uid === entry.uid)!, staffRow);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  if (entry.moved) {
+    undoMove(entry);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  if (entry.field === "injuries") {
+    unhealed(entry.uid);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  if (entry.field === "bans") {
+    liftedPlayers.delete(entry.uid);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  const tactical = nationalTacticsUndo.get(entry.id);
+  if (tactical) {
+    const current = nationalExposure.get(tactical.key);
+    if (current?.some((value, index) => value !== tactical.after[index])) {
+      throw failure("national.tactics", "O registro mudou desde a gravação.");
+    }
+    nationalExposure.set(tactical.key, tactical.before);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  if (entry.field === "cohesion") {
+    cohesionSet.set(entry.uid, entry.old);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  if (entry.field === "tactics") {
+    tacticsSet.set(entry.uid, entry.old);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  if (entry.field === "retirement") {
+    keptPlayers.delete(entry.uid);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  if (entry.clause) {
+    clausesSet.set(entry.uid, clauseUndo.get(entry.id)!);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  if (entry.stadium) {
+    stadiumNames.set(entry.uid, entry.stadium.from);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  if (entry.personName) {
+    undoPlayerName(entry);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  if (entry.tie) {
+    tiesSet.set(entry.uid, tieUndo.get(entry.id)!);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  if (entry.captaincy) {
+    undoCaptain(entry);
+    entry.undoneAt = Date.now();
+    return { ...entry };
+  }
+  const found = currentValues(entry.entity, entry.uid)[entry.field];
+  if (found !== entry.new) {
+    const message = `${entry.field} is now ${found}, not ${entry.new}; the game has changed it since`;
+    throw failure("edit.conflict", message, { field: entry.field, expected: entry.new, found: found ?? 0 });
+  }
+  writeValue(entry.entity, entry.uid, entry.field, entry.old);
+  // A recall that took the loan's option to buy away writes it back too, as the real undo does.
+  if (entry.recall) {
+    writeValue(entry.entity, entry.uid, "loan.option_fee", entry.recall.optionFee);
+  }
+  entry.undoneAt = Date.now();
+  return { ...entry };
+}
+
+// Moves to other clubs ----------------------------------------------------------------------------------------------
+
+/** The players moved to another club, with how many of their moves are not undone. */
+const movedPlayers = new Map<number, number>();
+
+/** What a list row says about the player's club and contract end. */
+type ClubRow = Pick<PlayerSummary, "club" | "clubUid" | "contractExpires">;
+
+/**
+ * What each move (by the id of its logged change) found in the list row and on top of the profile, for its undo; a
+ * swap also keeps the row of the player who went the other way, and a move that made room the row of the player it
+ * released.
+ */
+const moveUndo = new Map<
+  number,
+  {
+    row: ClubRow;
+    written?: FieldValues;
+    other?: { uid: number; row: ClubRow };
+    released?: { uid: number; row: ClubRow };
+    paid?: [number, string, number][];
+  }
+>();
+
+/** The most a transfer fee can be, as in the real commands. */
+const MAX_FEE = 2_000_000_000;
+
+/**
+ * What paying `fee` does to the money of the clubs `to` (which pays it out of its balance and transfer budget) and
+ * `from` (whose balance takes it), as the real command works it out; a club without finances is left alone.
+ */
+function feePlan(from: number, to: number, fee: number): FeePlan {
+  if (!Number.isInteger(fee) || fee < 0 || fee > MAX_FEE) {
+    throw failure("edit.outOfRange", `${fee} is not a valid fee; it takes 0 to ${MAX_FEE}`, {
+      field: "fee",
+      value: fee,
+      min: 0,
+      max: MAX_FEE,
+    });
+  }
+  const money = (club: number, buying: boolean): ClubMoney | null => {
+    const now = currentValues("club", club);
+    const balance = now["finance.balance"];
+    if (balance === undefined) {
+      return null;
+    }
+    const budget = now["finance.transfer_budget"];
+    return {
+      club,
+      balance: { before: balance, after: buying ? balance - fee : balance + fee },
+      transferBudget:
+        buying && budget !== undefined && budget >= 0 ? { before: budget, after: Math.max(0, budget - fee) } : null,
+    };
+  };
+  return { fee, buyer: money(to, true), seller: money(from, false) };
+}
+
+/** The men's fixture club whose squad list is full, so that the move dialog's offer to make room can be seen. */
+const FULL_CLUB = 500 + (CLUBS.length - 1) * 7;
+
+/**
+ * `room_makers`: the senior players of the fixture club that are not out on loan, in the real command's order: those
+ * neither injured nor a captain first, the weakest first among each.
+ */
+function roomMakers(clubUid: number): RoomMaker[] {
+  const teams = clubSquads(clubUid);
+  const captains = new Set(teams.flatMap((team) => [team.captain, team.viceCaptain]));
+  const makers = teams[0].players
+    .filter((member) => member.loan === null)
+    .map((member): RoomMaker => {
+      const row = players.find((p) => p.uid === member.uid)!;
+      return { ...row, injured: member.injuries > 0, captain: captains.has(member.uid) };
+    });
+  const worse = (maker: RoomMaker) => (maker.injured || maker.captain ? 1 : 0);
+  return makers.sort((a, b) => worse(a) - worse(b) || a.currentAbility - b.currentAbility);
+}
+
+/**
+ * Refuses moving any of the players `uids` while a transfer arranged for him waits for its day, as the app does: the
+ * game makes it from the club he is at.
+ */
+function refuseWhileArranged(...uids: (number | undefined)[]) {
+  const waiting = changes.some(
+    (change) =>
+      change.entity === "player" &&
+      uids.includes(change.uid) &&
+      change.moved?.arranged !== undefined &&
+      change.undoneAt === null &&
+      numberFromDate(GAME_DATE) < change.moved.arranged,
+  );
+  if (waiting) {
+    throw failure("arrange.underWay", "the player already has a move agreed, or an offer not yet answered");
+  }
+}
+
+/**
+ * `plan_club_move`: the checks of the real command that the fixtures can have, with its messages. With `release`,
+ * that player of the club makes room: he must be one `room_makers` lists.
+ */
+function planMove(uid: number, clubUid: number, terms: MoveTerms, fee?: number, release?: number): MovePreview {
+  const player = players.find((p) => p.uid === uid);
+  const to = clubs.find((c) => c.uid === clubUid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  refuseWhileArranged(uid, release);
+  if (!to) {
+    throw notFound("club", clubUid);
+  }
+  const outOfRange = (field: string, value: number, min: number, max: number) =>
+    failure("move.outOfRange", `${value} is not a valid ${field}; it takes ${min} to ${max}`, { field, value, min, max });
+  if (terms.wage !== undefined && (!Number.isInteger(terms.wage) || terms.wage < 0 || terms.wage > 10_000_000)) {
+    throw outOfRange("contract.wage", terms.wage, 0, 10_000_000);
+  }
+  const tomorrow = numberFromDate(GAME_DATE) + 1;
+  if (terms.expires !== undefined && (dateFromNumber(terms.expires) === null || terms.expires < tomorrow || terms.expires > 21001231)) {
+    throw outOfRange("contract.expires", terms.expires, tomorrow, 21001231);
+  }
+  if (player.clubUid === null) {
+    // A free agent is signed under a contract made for him, as the real command does: the wage given or one like the
+    // club's, and the end date given or 30 June at the end of next season.
+    if (to.women !== isWoman(uid)) {
+      throw failure("move.menAndWomen", "one club is a men's club and the other a women's club");
+    }
+    const seasonEnds = GAME_DATE.month <= 6 ? GAME_DATE.year : GAME_DATE.year + 1;
+    return {
+      to: { uid: to.uid, name: to.name },
+      contract: {
+        wage: terms.wage ?? 25_000,
+        expires: terms.expires ?? (seasonEnds + 1) * 10_000 + 630,
+        squadStatus: player.positions.includes("gk") ? 20 : 4,
+      },
+    };
+  }
+  if (player.clubUid === clubUid) {
+    throw failure("move.sameClub", "the player is at this club already");
+  }
+  if (to.women !== clubs.find((c) => c.uid === player.clubUid)?.women) {
+    throw failure("move.menAndWomen", "one club is a men's club and the other a women's club");
+  }
+  if (release !== undefined) {
+    if (!players.some((p) => p.uid === release)) {
+      throw notFound("player", release);
+    }
+    if (!roomMakers(clubUid).some((maker) => maker.uid === release)) {
+      throw failure("move.notListed", "the squad lists do not hold the player where they should");
+    }
+  } else if (clubUid === FULL_CLUB) {
+    const message = "the club's squad list has no room for another player (36 now), and the editor cannot make it bigger";
+    throw failure("move.noRoom", message, { players: 36 });
+  }
+  const from = clubs.find((c) => c.uid === player.clubUid)!;
+  return {
+    from: { uid: from.uid, name: from.name },
+    to: { uid: to.uid, name: to.name },
+    ...(fee !== undefined && fee > 0 && { fee: feePlan(from.uid, to.uid, fee) }),
+  };
+}
+
+/**
+ * `move_player`: moves the fixture player and logs it as a change of his `club`; with `release`, that player of the
+ * club becomes a free agent in the same change.
+ */
+/**
+ * Pays the fee of `preview`, as the real commands pay one: each amount by what it changes, so that undoing takes back
+ * just that. What was paid, for the undo.
+ */
+function payFee(preview: MovePreview): [number, string, number][] {
+  const paid: [number, string, number][] = [];
+  for (const money of [preview.fee?.buyer, preview.fee?.seller]) {
+    if (money) {
+      paid.push([money.club, "finance.balance", money.balance.after - money.balance.before]);
+      writeValue("club", money.club, "finance.balance", money.balance.after);
+      if (money.transferBudget) {
+        paid.push([money.club, "finance.transfer_budget", money.transferBudget.after - money.transferBudget.before]);
+        writeValue("club", money.club, "finance.transfer_budget", money.transferBudget.after);
+      }
+    }
+  }
+  return paid;
+}
+
+/**
+ * `plan_loan_permanent`: a fixture player on loan can stay at the club he is on loan to, on the terms, that club paying
+ * his own one the fee; the same checks of the terms as a move.
+ */
+function planLoanPermanent(uid: number, terms: MoveTerms, fee?: number): ClubToClub {
+  const player = players.find((p) => p.uid === uid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  const loan = loanOf(player);
+  const from = loan && clubs.find((c) => c.uid === loan.parentUid);
+  const to = loan && clubs.find((c) => c.uid === loan.clubUid);
+  if (!from || !to) {
+    throw failure("move.notOnLoan", "the player is not on loan");
+  }
+  const outOfRange = (field: string, value: number, min: number, max: number) =>
+    failure("move.outOfRange", `${value} is not a valid ${field}; it takes ${min} to ${max}`, { field, value, min, max });
+  if (terms.wage !== undefined && (!Number.isInteger(terms.wage) || terms.wage < 0 || terms.wage > 10_000_000)) {
+    throw outOfRange("contract.wage", terms.wage, 0, 10_000_000);
+  }
+  const tomorrow = numberFromDate(addDays(GAME_DATE, 1));
+  if (terms.expires !== undefined && (dateFromNumber(terms.expires) === null || terms.expires < tomorrow || terms.expires > 21001231)) {
+    throw outOfRange("contract.expires", terms.expires, tomorrow, 21001231);
+  }
+  return {
+    from: { uid: from.uid, name: from.name },
+    to: { uid: to.uid, name: to.name },
+    ...(fee !== undefined && fee > 0 && { fee: feePlan(from.uid, to.uid, fee) }),
+  };
+}
+
+/**
+ * `make_loan_permanent`: the fixture player stays where he plays, his loan gone (as for a moved player, `loanOf` has
+ * none for him), logged as a move between the two clubs that `undoMove` takes back.
+ */
+function makeLoanPermanent(uid: number, terms: MoveTerms, fee?: number): LoggedChange {
+  const preview = planLoanPermanent(uid, terms, fee);
+  const player = players.find((p) => p.uid === uid)!;
+  const id = changes.length + 1;
+  const paid = payFee(preview);
+  moveUndo.set(id, {
+    row: { club: player.club, clubUid: player.clubUid, contractExpires: player.contractExpires },
+    written: written.get(`player:${uid}`),
+    paid,
+  });
+  if (terms.expires !== undefined) {
+    player.contractExpires = dateFromNumber(terms.expires);
+  }
+  if (terms.wage !== undefined) {
+    writeValue("player", uid, "contract.wage", terms.wage);
+  }
+  movedPlayers.set(uid, (movedPlayers.get(uid) ?? 0) + 1);
+  const logged: LoggedChange = {
+    id,
+    at: Date.now(),
+    name: player.name,
+    entity: "player",
+    uid,
+    field: "club",
+    old: preview.from.uid,
+    new: preview.to.uid,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+    moved: { from: preview.from.name, to: preview.to.name, ...(preview.fee && { fee: preview.fee.fee }) },
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+function movePlayer(uid: number, clubUid: number, terms: MoveTerms, fee?: number, release?: number): LoggedChange {
+  const preview = planMove(uid, clubUid, terms, fee, release);
+  const player = players.find((p) => p.uid === uid)!;
+  const leaver = players.find((p) => p.uid === release);
+  const id = changes.length + 1;
+  const paid = payFee(preview);
+  const rowOf = (p: PlayerSummary) => ({ club: p.club, clubUid: p.clubUid, contractExpires: p.contractExpires });
+  moveUndo.set(id, {
+    row: rowOf(player),
+    written: written.get(`player:${uid}`),
+    ...(leaver && { released: { uid: leaver.uid, row: rowOf(leaver) } }),
+    paid,
+  });
+  player.club = preview.to.name;
+  player.clubUid = preview.to.uid;
+  // A free agent's new contract ends on the day it says, given or not.
+  const expires = terms.expires ?? preview.contract?.expires;
+  if (expires !== undefined) {
+    player.contractExpires = dateFromNumber(expires);
+  }
+  if (terms.wage !== undefined) {
+    writeValue("player", uid, "contract.wage", terms.wage);
+  }
+  if (leaver) {
+    Object.assign(leaver, { club: null, clubUid: null, contractExpires: null });
+  }
+  movedPlayers.set(uid, (movedPlayers.get(uid) ?? 0) + 1);
+  const logged: LoggedChange = {
+    id,
+    at: Date.now(),
+    name: player.name,
+    entity: "player",
+    uid,
+    field: "club",
+    old: preview.from?.uid ?? 0,
+    new: preview.to.uid,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+    moved: {
+      ...(preview.from && { from: preview.from.name }),
+      to: preview.to.name,
+      ...(leaver && { released: leaver.name }),
+      ...(preview.fee && { fee: preview.fee.fee }),
+    },
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+/**
+ * `plan_arranged_transfer`: the checks of a move that the fixtures can have (the terms, the clubs' kinds), and what the
+ * game would make on its next day: the contract is the terms given, or the player's own.
+ */
+function planArranged(uid: number, clubUid: number, terms: MoveTerms, fee?: number): ArrangedPreview {
+  const player = players.find((p) => p.uid === uid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  if (player.clubUid === null) {
+    throw failure("move.freeAgent", "the player is a free agent, with no club to leave or swap");
+  }
+  const moved = planMove(uid, clubUid, terms, fee);
+  // His own contract, copied: the terms given change it.
+  const own = currentValues("player", uid);
+  const seasonEnds = GAME_DATE.month <= 6 ? GAME_DATE.year : GAME_DATE.year + 1;
+  return {
+    from: moved.from!,
+    to: moved.to,
+    fee: fee ?? 0,
+    moveDay: numberFromDate(addDays(GAME_DATE, 1)),
+    contract: {
+      wage: terms.wage ?? own["contract.wage"] ?? 0,
+      expires: terms.expires ?? own["contract.expires"] ?? (seasonEnds + 1) * 10_000 + 630,
+      squadStatus: own["contract.squad_status"] ?? 4,
+    },
+  };
+}
+
+/**
+ * `arrange_transfer`: logs the transfer as a change of the player's `club`, as a move is logged, but leaves him where
+ * he is: the game moves him on its next day.
+ */
+function arrangePlayer(uid: number, clubUid: number, terms: MoveTerms, fee?: number): LoggedChange {
+  const preview = planArranged(uid, clubUid, terms, fee);
+  const player = players.find((p) => p.uid === uid)!;
+  const id = changes.length + 1;
+  moveUndo.set(id, {
+    row: { club: player.club, clubUid: player.clubUid, contractExpires: player.contractExpires },
+    written: written.get(`player:${uid}`),
+    paid: [],
+  });
+  const logged: LoggedChange = {
+    id,
+    at: Date.now(),
+    name: player.name,
+    entity: "player",
+    uid,
+    field: "club",
+    old: preview.from.uid,
+    new: preview.to.uid,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+    moved: {
+      from: preview.from.name,
+      to: preview.to.name,
+      ...(preview.fee > 0 && { fee: preview.fee }),
+      arranged: preview.moveDay,
+    },
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+/** `plan_release`: the checks of the real command that the fixtures can have, with its messages; names his club. */
+function planRelease(uid: number): ClubName {
+  const player = players.find((p) => p.uid === uid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  if (player.clubUid === null) {
+    throw failure("move.freeAgent", "the player is a free agent, with no club to leave or swap");
+  }
+  refuseWhileArranged(uid);
+  const from = clubs.find((c) => c.uid === player.clubUid)!;
+  return { uid: from.uid, name: from.name };
+}
+
+/** `release_player`: the fixture player leaves his club as a free agent, logged as a change of his `club` to 0. */
+function releasePlayer(uid: number): LoggedChange {
+  const from = planRelease(uid);
+  const player = players.find((p) => p.uid === uid)!;
+  const id = changes.length + 1;
+  moveUndo.set(id, {
+    row: { club: player.club, clubUid: player.clubUid, contractExpires: player.contractExpires },
+    written: written.get(`player:${uid}`),
+  });
+  Object.assign(player, { club: null, clubUid: null, contractExpires: null });
+  const logged: LoggedChange = {
+    id,
+    at: Date.now(),
+    name: player.name,
+    entity: "player",
+    uid,
+    field: "club",
+    old: from.uid,
+    new: 0,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+    moved: { from: from.name },
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+/** `plan_club_swap`: the checks of the real command that the fixtures can have, with its messages. */
+function planSwap(uid: number, otherUid: number): ClubToClub {
+  const player = players.find((p) => p.uid === uid);
+  const other = players.find((p) => p.uid === otherUid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  if (!other) {
+    throw notFound("player", otherUid);
+  }
+  for (const p of [player, other]) {
+    if (p.clubUid === null) {
+      throw failure("move.freeAgent", "the player is a free agent, with no club to leave or swap");
+    }
+  }
+  if (player.clubUid === other.clubUid) {
+    throw failure("move.sameClub", "the player is at this club already");
+  }
+  refuseWhileArranged(uid, otherUid);
+  const from = clubs.find((c) => c.uid === player.clubUid)!;
+  const to = clubs.find((c) => c.uid === other.clubUid)!;
+  return { from: { uid: from.uid, name: from.name }, to: { uid: to.uid, name: to.name } };
+}
+
+/** `swap_players`: the two fixture players change clubs, logged as one change of the first one's club. */
+function swapPlayers(uid: number, otherUid: number): LoggedChange {
+  const preview = planSwap(uid, otherUid);
+  const player = players.find((p) => p.uid === uid)!;
+  const other = players.find((p) => p.uid === otherUid)!;
+  const id = changes.length + 1;
+  const rowOf = (p: PlayerSummary) => ({ club: p.club, clubUid: p.clubUid, contractExpires: p.contractExpires });
+  moveUndo.set(id, { row: rowOf(player), written: written.get(`player:${uid}`), other: { uid: otherUid, row: rowOf(other) } });
+  Object.assign(player, { club: preview.to.name, clubUid: preview.to.uid });
+  Object.assign(other, { club: preview.from.name, clubUid: preview.from.uid });
+  for (const moved of [uid, otherUid]) {
+    movedPlayers.set(moved, (movedPlayers.get(moved) ?? 0) + 1);
+  }
+  const logged: LoggedChange = {
+    id,
+    at: Date.now(),
+    name: player.name,
+    entity: "player",
+    uid,
+    field: "club",
+    old: preview.from.uid,
+    new: preview.to.uid,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+    moved: { from: preview.from.name, to: preview.to.name, with: other.name },
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+/** One fewer move of the player `uid` stands. */
+function unmoved(uid: number): void {
+  const live = (movedPlayers.get(uid) ?? 1) - 1;
+  if (live > 0) {
+    movedPlayers.set(uid, live);
+  } else {
+    movedPlayers.delete(uid);
+  }
+}
+
+/**
+ * Puts back what the move (or swap, or release) logged as `entry` changed, unless a player has moved again since. A
+ * release logged 0 as his new club: he has none. A move that made room brings the player it released back too.
+ */
+function undoMove(entry: LoggedChange): void {
+  const player = players.find((p) => p.uid === entry.uid);
+  const before = moveUndo.get(entry.id);
+  const other = before?.other && players.find((p) => p.uid === before.other!.uid);
+  const leaver = before?.released && players.find((p) => p.uid === before.released!.uid);
+  if (
+    !player ||
+    !before ||
+    (player.clubUid ?? 0) !== entry.new ||
+    (before.other && other?.clubUid !== entry.old) ||
+    (before.released && (!leaver || leaver.clubUid !== null))
+  ) {
+    throw failure("move.changed", "the game has changed the player's club since; reload and try again");
+  }
+  if (before.other && other) {
+    Object.assign(other, before.other.row);
+    unmoved(other.uid);
+  }
+  if (before.released && leaver) {
+    Object.assign(leaver, before.released.row);
+  }
+  // The fee goes back by what it changed.
+  for (const [club, key, change] of before.paid ?? []) {
+    writeValue("club", club, key, currentValues("club", club)[key]! - change);
+  }
+  Object.assign(player, before.row);
+  if (before.written) {
+    written.set(`player:${entry.uid}`, before.written);
+  } else {
+    written.delete(`player:${entry.uid}`);
+  }
+  unmoved(entry.uid);
+}
+
+// Healing -----------------------------------------------------------------------------------------------------------
+
+/**
+ * `heal_player`: the fixture player gets over his injuries, logged as a change of his `injuries` to none; `batch`
+ * groups the healings of a team-wide action.
+ */
+function healPlayer(uid: number, batch: number | null = null): LoggedChange {
+  const player = players.find((p) => p.uid === uid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  const injuries = injuriesOf(uid).length;
+  if (injuries === 0) {
+    throw failure("heal.notInjured", "the player has no injury to heal");
+  }
+  healedPlayers.add(uid);
+  const logged: LoggedChange = {
+    id: changes.length + 1,
+    at: Date.now(),
+    name: player.name,
+    entity: "player",
+    uid,
+    field: "injuries",
+    old: injuries,
+    new: 0,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch,
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+/** Lists the injuries of the player `uid` again. */
+function unhealed(uid: number): void {
+  healedPlayers.delete(uid);
+}
+
+/** `lift_bans`: the fixture player's bans are lifted, logged as a change of his `bans` to none. */
+function liftBans(uid: number, batch: number | null = null): LoggedChange {
+  const player = players.find((p) => p.uid === uid);
+  if (!player) {
+    throw notFound("player", uid);
+  }
+  const bans = bansOf(uid).length;
+  if (bans === 0) {
+    throw failure("ban.notBanned", "the player has no ban to lift");
+  }
+  liftedPlayers.add(uid);
+  const logged: LoggedChange = {
+    id: changes.length + 1,
+    at: Date.now(),
+    name: player.name,
+    entity: "player",
+    uid,
+    field: "bans",
+    old: bans,
+    new: 0,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch,
+  };
+  changes.push(logged);
+  return { ...logged };
+}
+
+// Squads and captains -----------------------------------------------------------------------------------------------
+
+/** The captains changed through the editor, by `club:team`. */
+const captainsSet = new Map<string, { captain: number | null; viceCaptain: number | null }>();
+
+/** What each captaincy (by the id of its logged change) found and left, for its undo. */
+const captainUndo = new Map<number, { key: string; before: CaptainPair; after: CaptainPair }>();
+
+type CaptainPair = { captain: number | null; viceCaptain: number | null };
+
+/**
+ * The teams of a fixture club, as UIDs: the senior team holds the players over 21 and the best youngsters, the
+ * under-21s and under-18s the other youngsters. The weakest senior player is out on loan.
+ */
+function fixtureTeams(clubUid: number): { kind: number; ageLimit: number | null; uids: number[]; out: number | null }[] {
+  const own = players.filter((p) => p.clubUid === clubUid).sort((a, b) => b.currentAbility - a.currentAbility);
+  const young = (p: PlayerSummary, limit: number) => p.age !== null && p.age <= limit;
+  const senior = own.filter((p, i) => !young(p, 21) || i < 4);
+  const rest = own.filter((p) => !senior.includes(p));
+  const teams = [
+    { kind: 0, ageLimit: null, uids: senior.map((p) => p.uid), out: senior[senior.length - 1]?.uid ?? null },
+    { kind: 10, ageLimit: 21, uids: rest.filter((p) => !young(p, 18)).map((p) => p.uid), out: null },
+    { kind: 12, ageLimit: 18, uids: rest.filter((p) => young(p, 18)).map((p) => p.uid), out: null },
+  ];
+  return own.length === 0 ? teams.slice(0, 1) : teams;
+}
+
+/** The captains of a fixture team: the senior team's two best players until the editor changes them. */
+function captainsOf(clubUid: number, index: number, uids: number[]): CaptainPair {
+  const set = captainsSet.get(`${clubUid}:${index}`);
+  if (set) {
+    return set;
+  }
+  return index === 0 ? { captain: uids[0] ?? null, viceCaptain: uids[1] ?? null } : { captain: null, viceCaptain: null };
+}
+
+/** `club_squads`: the fixture club's teams with their players' list rows and live values. */
+function clubSquads(clubUid: number): ClubTeam[] {
+  if (!clubs.some((c) => c.uid === clubUid)) {
+    throw notFound("club", clubUid);
+  }
+  // Whom the club's players hold a lasting reason to be unhappy about, each of them once.
+  const concerned = new Map<number, number>();
+  for (const uid of new Set(fixtureTeams(clubUid).flatMap((team) => team.uids))) {
+    const concerns = details(players.find((p) => p.uid === uid)!).contract?.concerns ?? [];
+    const about = new Set(concerns.filter((c) => c.ended === null && c.about !== null).map((c) => c.about!.uid));
+    for (const mate of about) {
+      concerned.set(mate, (concerned.get(mate) ?? 0) + 1);
+    }
+  }
+  return fixtureTeams(clubUid).map((team, index) => ({
+    index,
+    kind: team.kind,
+    ageLimit: team.ageLimit,
+    ...captainsOf(clubUid, index, team.uids),
+    players: team.uids.map((uid): SquadPlayer => {
+      const row = players.find((p) => p.uid === uid)!;
+      const d = details(row);
+      return {
+        ...row,
+        playsHere: uid !== team.out,
+        loan: uid === team.out ? "out" : null,
+        condition: d.condition,
+        matchSharpness: d.matchSharpness,
+        jadedness: d.jadedness,
+        morale: d.morale,
+        cohesion: cohesionOf(uid),
+        // The B team and the under-19s play a tactic of their own that the human manager picks too.
+        tactics: tacticsOf(uid),
+        trains: trainsOf(uid),
+        concernedTeammates: concerned.get(uid) ?? 0,
+        injuries: d.injuries.length,
+        bans: d.bans.length,
+        attributesFrozen: frozenAttributes.has(uid),
+        fitnessFrozen: frozenFitness.has(uid),
+        positionsFrozen: frozenPositions.has(uid),
+      };
+    }),
+  }));
+}
+
+/**
+ * `freeze_team`: what `kind` names frozen, or unfrozen, for every player of the fixture team. Under `?failedchecks`
+ * the attributes do not check out, so freezing them is refused at once, as the real command refuses it.
+ */
+function freezeTeam(clubUid: number, index: number, kind: FreezeKind, frozen: boolean): TeamFreeze {
+  const team = fixtureTeam(clubUid, index);
+  if (frozen && kind === "attributes" && failedChecks) {
+    throw failure(
+      "guard.failed",
+      "attribute.corners is left unchanged: attributes did not check out in this version of the game",
+      { field: "attribute.corners", check: "attributes" },
+    );
+  }
+  const held = kind === "attributes" ? frozenAttributes : kind === "fitness" ? frozenFitness : frozenPositions;
+  let changed = 0;
+  for (const player of team.players) {
+    if (held.has(player.uid) !== frozen) {
+      if (frozen) {
+        held.add(player.uid);
+      } else {
+        held.delete(player.uid);
+      }
+      changed += 1;
+    }
+  }
+  return { changed, failed: [] };
+}
+
+/** The team at `index` of the fixture club, or the real command's failure. */
+function fixtureTeam(clubUid: number, index: number): ClubTeam {
+  const team = clubSquads(clubUid).find((t) => t.index === index);
+  if (!team) {
+    throw failure("squad.noTeam", `the club has no team number ${index} that checks out`, { index });
+  }
+  return team;
+}
+
+/** `set_captain`: the checks of the real command, a swap when he held the other role, and the log entry. */
+function setCaptain(clubUid: number, index: number, role: CaptainRole, uid: number): LoggedChange {
+  const team = fixtureTeam(clubUid, index);
+  if (!team.players.some((p) => p.uid === uid && p.playsHere)) {
+    throw failure("captain.notInTeam", "the player does not play for this team");
+  }
+  const [key, otherKey] = role === "captain" ? (["captain", "viceCaptain"] as const) : (["viceCaptain", "captain"] as const);
+  const old = team[key];
+  if (old === uid) {
+    throw failure("captain.unchanged", "The player holds that role already.");
+  }
+  const swapped = team[otherKey] === uid;
+  const before: CaptainPair = { captain: team.captain, viceCaptain: team.viceCaptain };
+  const after: CaptainPair = { ...before, [key]: uid, ...(swapped && { [otherKey]: old }) };
+  const keyOf = `${clubUid}:${index}`;
+  captainsSet.set(keyOf, after);
+  const nameOf = (u: number) => players.find((p) => p.uid === u)?.name ?? String(u);
+  const logged: LoggedChange = {
+    id: changes.length + 1,
+    at: Date.now(),
+    name: clubs.find((c) => c.uid === clubUid)!.name,
+    entity: "club",
+    uid: clubUid,
+    field: role === "captain" ? "captain" : "vice_captain",
+    old: old ?? 0,
+    new: uid,
+    undoneAt: null,
+    earlier: false,
+    undoable: true,
+    batch: null,
+    captaincy: {
+      team: index,
+      kind: team.kind,
+      ageLimit: team.ageLimit,
+      from: old === null ? null : nameOf(old),
+      to: nameOf(uid),
+      swapped,
+    },
+  };
+  captainUndo.set(logged.id, { key: keyOf, before, after });
+  changes.push(logged);
+  return { ...logged };
+}
+
+/** Gives back the captaincies the change `entry` took, unless they have changed again since. */
+function undoCaptain(entry: LoggedChange): void {
+  const undo = captainUndo.get(entry.id);
+  const [clubUid, index] = undo ? undo.key.split(":").map(Number) : [0, 0];
+  const now = undo && captainsOf(clubUid, index, []);
+  if (!undo || now?.captain !== undo.after.captain || now?.viceCaptain !== undo.after.viceCaptain) {
+    throw failure("move.changed", "the game has changed the memory at 0x0 since; reload and try again", { address: "0x0" });
+  }
+  captainsSet.set(undo.key, undo.before);
+}
+
+/** `team_action`: the action on every player of the fixture team, logged as one batch like a mass edit. */
+function teamAction(clubUid: number, index: number, action: TeamAction, targets?: number[], fitness?: FitnessTargets): MassReport {
+  const players = fixtureTeam(clubUid, index).players;
+  const selected = targets ? players.filter(player => targets.includes(player.uid)) : players;
+  if (targets && new Set(selected.map(player => player.uid)).size !== new Set(targets).size) throw Error("O plantel mudou.");
+  return actOnPlayers(selected, action, fitness);
+}
+
+/** `national_team_action`: Heal all, Inspire all or Refresh all for the players the senior team lists. */
+function nationalTeamAction(uid: number, action: TeamAction, fitness?: FitnessTargets): MassReport {
+  if (action !== "heal" && action !== "inspire" && action !== "refresh" && action !== "liftBans") {
+    throw failure("national.action", "A national team has Heal all, Inspire all and Refresh all only.");
+  }
+  return actOnPlayers(nationalProfile(uid, 0).squad.players, action, fitness);
+}
+
+/** The action on every one of `players`, logged as one batch like a mass edit. */
+function actOnPlayers(players: readonly SquadPlayer[], action: TeamAction, fitness?: FitnessTargets): MassReport {
+  const team = { players };
+  const batch = nextMassId++;
+  const report: MassReport = { batch, applied: 0, failed: [] };
+  if (action === "heal") {
+    for (const player of team.players.filter((p) => p.injuries > 0)) {
+      healPlayer(player.uid, batch);
+      report.applied++;
+    }
+    return report;
+  }
+  if (action === "liftBans") {
+    for (const player of team.players.filter((p) => p.bans > 0)) {
+      liftBans(player.uid, batch);
+      report.applied++;
+    }
+    return report;
+  }
+  if (action === "maxCohesion") {
+    // Those with an entry for the club, and not at the top already.
+    for (const player of team.players) {
+      const old = cohesionOf(player.uid);
+      if (old === null || old === 100) {
+        continue;
+      }
+      cohesionSet.set(player.uid, 100);
+      changes.push({
+        id: changes.length + 1,
+        at: Date.now(),
+        name: player.name,
+        entity: "player",
+        uid: player.uid,
+        field: "cohesion",
+        old,
+        new: 100,
+        undoneAt: null,
+        earlier: false,
+        undoable: true,
+        batch,
+      });
+      report.applied++;
+    }
+    return report;
+  }
+  if (action === "maxTactics") {
+    // Every player who plays here and does not know it at its best; one who does not train gets his record only.
+    for (const player of team.players.filter((p) => p.playsHere)) {
+      const old = tacticsOf(player.uid);
+      const best = trainsOf(player.uid) ? 100 : Math.max(old, 50);
+      if (old === best) {
+        continue;
+      }
+      tacticsSet.set(player.uid, best);
+      changes.push({
+        id: changes.length + 1,
+        at: Date.now(),
+        name: player.name,
+        entity: "player",
+        uid: player.uid,
+        field: "tactics",
+        old,
+        new: best,
+        undoneAt: null,
+        earlier: false,
+        undoable: true,
+        batch,
+      });
+      report.applied++;
+    }
+    return report;
+  }
+  const values: [string, number][] =
+    action === "inspire"
+      ? [["morale", 20]]
+      : action === "refresh"
+        ? [["condition", fitness?.condition ?? 10_000], ["match_sharpness", fitness?.sharpness ?? 10_000], ["jadedness", -500]]
+        : ATTRIBUTES.map(bestAttribute);
+  for (const player of team.players) {
+    setValues(player, values, report);
+  }
+  return report;
+}
+
+/** An attribute at its best, as Max attributes writes it: 20, stored as 100, and 1 (stored as 5) where lower is better. */
+const bestAttribute = (key: string): [string, number] => [
+  `attribute.${key}`,
+  key === "injury_proneness" || key === "dirtiness" ? 5 : 100,
+];
+
+/** A staff attribute at its best as Max attributes writes it: 20 for the two stored as shown, else 20 stored as 100. */
+const bestStaffAttribute = (key: string): [string, number] => [
+  `attribute.${key}`,
+  STAFF_RATINGS.includes(key) ? 20 : 100,
+];
+
+/** Writes `values` (field, value as stored) to the person, each logged in the batch of `report`, which counts them. */
+function setValues(
+  player: { uid: number; name: string },
+  values: [string, number][],
+  report: MassReport,
+  entity: Entity = "player",
+  source?: string,
+): void {
+  const now = currentValues(entity, player.uid);
+  for (const [field, value] of values) {
+    if (now[field] === value) {
+      continue;
+    }
+    writeValue(entity, player.uid, field, value);
+    const logged: LoggedChange = {
+      id: changes.length + 1,
+      at: Date.now(),
+      name: player.name,
+      entity,
+      uid: player.uid,
+      field,
+      old: now[field],
+      new: value,
+      undoneAt: null,
+      earlier: false,
+      undoable: true,
+      batch: report.batch,
+      source,
+    };
+    changes.push(logged);
+    report.applied++;
+  }
+}
+
+// Mass edits --------------------------------------------------------------------------------------------------------
+
+/** Most targets one mass edit may change, and most rows a preview lists, as with the real commands. */
+const MASS_LIMIT = 10_000;
+const PREVIEW_ROWS = 500;
+
+/** Whether `name` (with the other names it is found by) and `uid` match `query`, as the real search does. */
+function matchesQuery(query: string, uid: number, names: string): boolean {
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  return String(uid) === query.trim() || words.every((w) => fold(names).includes(w));
+}
+
+/** The players, staff or clubs a search and the entity's filter select, as the real `plan_mass_edit` does. */
+function selectTargets(entity: Entity, query: string, filters: MassFilters): { uid: number; name: string }[] {
+  if (entity === "player") {
+    const filter = filters.playerFilter ?? {};
+    return players.filter((p) => matchesQuery(query, p.uid, `${p.name} ${p.fullName ?? ""}`) && matchesPlayerFilter(p, filter));
+  }
+  if (entity === "staff") {
+    const filter = filters.staffFilter ?? {};
+    return staff.filter((s) => matchesQuery(query, s.uid, `${s.name} ${s.fullName ?? ""}`) && matchesStaffFilter(s, filter));
+  }
+  const filter = filters.clubFilter ?? {};
+  return clubs.filter((c) => matchesQuery(query, c.uid, `${c.name} ${c.shortName ?? ""}`) && clubMatches(c, filter));
+}
+
+/** The mass edit last previewed, until it is applied or replaced. */
+let pendingMass: { id: number; entity: Entity; planned: PlannedChange[] } | null = null;
+let nextMassId = 1;
+
+const goldenPreviews = new Map<number, GoldenGenerationPreview>();
+
+function goldenIntake(club: number, day: number) {
+  if (!clubs.some(item => item.uid === club)) throw notFound("club", club);
+  const result = youthIntakes({ players, clubs, ratings, women }, club, cityOf);
+  const intake = result.intakes.find(item => item.joined && numberFromDate(item.joined) === day);
+  if (!intake) throw Error("A fornada selecionada não está mais disponível.");
+  return intake;
+}
+
+function planGoldenGeneration(club: number, day: number, minimum: number): GoldenGenerationPreview {
+  if (!Number.isInteger(minimum) || minimum < 1 || minimum > 200) throw Error("Informe um PA inteiro de 1 a 200.");
+  const intake = goldenIntake(club, day);
+  const rows = intake.players.map(({ player }) => {
+    const values = currentValues("player", player.uid);
+    const ca = values.current_ability ?? null;
+    const previousPa = values.potential_ability ?? null;
+    const proposedPa = ca !== null && previousPa !== null && ca >= 1 && previousPa >= ca && previousPa <= 200
+      ? Math.max(previousPa, minimum) : null;
+    return { uid: player.uid, name: player.name, ca, previousPa, proposedPa,
+      reason: proposedPa === null ? "CA ou PA indisponível ou incoerente" : null };
+  });
+  const preview = { id: nextMassId++, day, rows };
+  goldenPreviews.set(club, preview);
+  return preview;
+}
+
+function applyGoldenGeneration(club: number, id: number): MassReport {
+  const preview = goldenPreviews.get(club);
+  if (!preview || preview.id !== id) throw Error("A prévia ficou desatualizada. Gere uma nova prévia antes de aplicar.");
+  goldenPreviews.delete(club);
+  const members = new Set(goldenIntake(club, preview.day).players.map(({ player }) => player.uid));
+  const report: MassReport = { batch: nextMassId++, applied: 0, failed: [] };
+  for (const row of preview.rows) {
+    if (row.proposedPa === null || row.proposedPa === row.previousPa) continue;
+    const current = currentValues("player", row.uid);
+    if (!members.has(row.uid) || current.current_ability !== row.ca || current.potential_ability !== row.previousPa) {
+      report.failed.push({ uid: row.uid, name: row.name, field: "potential_ability",
+        error: failure("youth.goldenGeneration", "O jogador mudou desde a prévia.") });
+      continue;
+    }
+    setValues(row, [["potential_ability", row.proposedPa]], report, "player", "Geração de Ouro");
+  }
+  return report;
+}
+
+/** The most years an Add years moves a date, either way, and the most a contract is extended by: `MOST_YEARS`. */
+const MOST_YEARS = 50;
+
+/**
+ * What an operation turns `old` into, as the real one does: added and scaled values stay within the field's range; a
+ * date moved by years may leave it, which the plan checks, and a value that is no date stays as it is.
+ */
+function operate(field: EditField, operation: MassOperationKind, old: number): number {
+  const clamp = (value: number) => Math.min(field.max, Math.max(field.min, value));
+  switch (operation.op) {
+    case "set":
+      return operation.value;
+    case "add":
+      return clamp(old + operation.amount);
+    case "scale":
+      return clamp(Math.round((old * operation.percent) / 100));
+    case "addYears": {
+      const date = dateFromNumber(old);
+      return date === null ? old : numberFromDate(plusYears(date, operation.years));
+    }
+  }
+}
+
+/** `plan_mass_edit`, with the real command's checks and messages. */
+function planMass(entity: Entity, query: string, filters: MassFilters, operations: MassOperation[]): MassPreview {
+  if (operations.length === 0) {
+    throw failure("mass.noOperations", "Choose at least one field to change.");
+  }
+  const targets = selectTargets(entity, query, filters);
+  if (targets.length > MASS_LIMIT) {
+    const message = `${targets.length} match. Narrow the search or the filters to ${MASS_LIMIT} or fewer for a mass edit.`;
+    throw failure("mass.tooMany", message, { count: targets.length, limit: MASS_LIMIT });
+  }
+  const table = fieldTable(entity);
+  const ops = operations.map(({ field: key, operation }) => {
+    const field = table.find((f) => f.key === key);
+    if (!field) {
+      throw failure("edit.unknownField", `${entity} has no editable field ${key}`, { entity, field: key });
+    }
+    if (operation.op === "set" && (operation.value < field.min || operation.value > field.max)) {
+      const message = `${operation.value} is not a valid ${key}; it takes ${field.min} to ${field.max}`;
+      throw failure("edit.outOfRange", message, { field: key, value: operation.value, min: field.min, max: field.max });
+    }
+    if ((operation.op === "add" || operation.op === "scale") && field.kind === "date") {
+      const reason = "a date can only be set or moved by years";
+      throw failure("edit.unsupported", `${key}: ${reason}`, { field: key, reason });
+    }
+    if (operation.op === "addYears" && field.kind !== "date") {
+      const reason = "only a date can be moved by years";
+      throw failure("edit.unsupported", `${key}: ${reason}`, { field: key, reason });
+    }
+    if (operation.op === "addYears" && Math.abs(operation.years) > MOST_YEARS) {
+      const message = `${operation.years} is not a valid ${key}; it takes ${-MOST_YEARS} to ${MOST_YEARS}`;
+      const params = { field: key, value: operation.years, min: -MOST_YEARS, max: MOST_YEARS };
+      throw failure("edit.outOfRange", message, params);
+    }
+    return { field, operation };
+  });
+  const planned: PlannedChange[] = [];
+  const skipped: SkippedField[] = [];
+  let unchanged = 0;
+  for (const { uid, name } of targets) {
+    const values = currentValues(entity, uid);
+    let changed = false;
+    for (const { field, operation } of ops) {
+      const old: number | undefined = values[field.key];
+      if (old === undefined) {
+        const reason = `${field.key} cannot be changed here: its record is missing or does not check out`;
+        skipped.push({ uid, name, field: field.key, reason, code: "edit.noRecord", params: { field: field.key } });
+        continue;
+      }
+      const value = operate(field, operation, old);
+      // A date moved by years can leave the days the field takes, such as a contract's end past 2100.
+      if (value !== old && (value < field.min || value > field.max)) {
+        const reason = `${value} is not a valid ${field.key}; it takes ${field.min} to ${field.max}`;
+        const params = { field: field.key, value: String(value), min: String(field.min), max: String(field.max) };
+        skipped.push({ uid, name, field: field.key, reason, code: "edit.outOfRange", params });
+        continue;
+      }
+      if (value !== old) {
+        changed = true;
+        planned.push({ uid, name, field: field.key, old, new: value });
+      }
+    }
+    unchanged += changed ? 0 : 1;
+  }
+  const id = nextMassId++;
+  pendingMass = { id, entity, planned };
+  return {
+    id,
+    targets: targets.length,
+    unchanged,
+    changes: planned.length,
+    rows: planned.slice(0, PREVIEW_ROWS),
+    skippedCount: skipped.length,
+    skipped: skipped.slice(0, PREVIEW_ROWS),
+  };
+}
+
+/** `apply_mass_edit`: the previewed changes, each only while the value is still the one previewed. */
+function applyMass(id: number): MassReport {
+  if (!pendingMass || pendingMass.id !== id) {
+    throw failure("mass.outOfDate", "This preview is out of date. Preview the mass edit again.");
+  }
+  const { entity, planned } = pendingMass;
+  pendingMass = null;
+  const batch = nextMassId++;
+  const report: MassReport = { batch, applied: 0, failed: [] };
+  for (const change of planned) {
+    const found = currentValues(entity, change.uid)[change.field];
+    if (found !== change.old) {
+      const message = `${change.field} is now ${found}, not ${change.old}; the game has changed it since`;
+      const params = { field: change.field, expected: change.old, found: found ?? 0 };
+      report.failed.push({ ...change, error: failure("edit.conflict", message, params) });
+      continue;
+    }
+    writeValue(entity, change.uid, change.field, change.new);
+    changes.push({
+      ...change,
+      id: changes.length + 1,
+      at: Date.now(),
+      entity,
+      undoneAt: null,
+      earlier: false,
+      undoable: true,
+      batch,
+    });
+    report.applied++;
+  }
+  return report;
+}
+
+/** `undo_batch`: every change of the batch not undone yet, newest first. */
+function undoMassBatch(batch: number): BatchUndo {
+  const report: BatchUndo = { undone: 0, failed: [] };
+  for (const entry of [...changes].reverse()) {
+    if (entry.batch !== batch || entry.undoneAt !== null) {
+      continue;
+    }
+    try {
+      undoChange(entry.id);
+      report.undone++;
+    } catch (e) {
+      // `undoChange` fails the way the real command does, with a failure.
+      report.failed.push({ id: entry.id, error: e as Failure });
+    }
+  }
+  return report;
+}
+
+/** The nation each fixture club is from, in the order of `CLUBS`: two of them play in England. */
+const CLUB_NATIONS = ["England", "Spain", "Portugal", "Germany", "Türkiye", "England"];
+
+/** The league a fixture club's first team plays in: the men's clubs of England in two divisions, every other in one. */
+function fixtureLeague(i: number, women: boolean): Pick<ClubSummary, "league" | "leagueUid" | "leagueNation"> {
+  const nation = CLUB_NATIONS[i];
+  if (women) {
+    return { league: `${nation} Women's League`, leagueUid: 9000 + ALL_NATIONS.indexOf(nation), leagueNation: nation };
+  }
+  if (nation === "England") {
+    return i === 0
+      ? { league: "Premier Division", leagueUid: 11, leagueNation: nation }
+      : { league: "First Division", leagueUid: 12, leagueNation: nation };
+  }
+  return { league: `${nation} Top Division`, leagueUid: 100 + ALL_NATIONS.indexOf(nation), leagueNation: nation };
+}
+
+const clubs: ClubSummary[] = CLUBS.flatMap((name, i) => {
+  const nation = { nation: CLUB_NATIONS[i], nationUid: 1000 + ALL_NATIONS.indexOf(CLUB_NATIONS[i]) };
+  return [
+    { uid: 500 + i * 7, name, shortName: name.split(" ")[0], women: false, reputation: 8200 - i * 900, founded: 1880 + i * 11, ...nation, ...fixtureLeague(i, false) },
+    { uid: 2_000_100_000 + i, name, shortName: name.split(" ")[0], women: true, reputation: 6100 - i * 700, founded: 1985 + i * 4, ...nation, ...fixtureLeague(i, true) },
+  ];
+});
+
+/**
+ * The national teams of the fixture nations, men's and women's. Add `?nationals=off` (or `?nationals=unreadable`) to the
+ * address of the dev page to see the tab as it is on a build of the game that has no place for them.
+ */
+const nationals: NationalTeamSummary[] = ALL_NATIONS.flatMap((name, i) => {
+  const nationUid = 1000 + i;
+  const code = name.slice(0, 3).toUpperCase();
+  return [
+    { uid: nationUid, name, code, nationUid, women: false, reputation: 9200 - i * 650, players: 23 },
+    { uid: 2_000_200_000 + i, name, code, nationUid, women: true, reputation: 7400 - i * 500, players: 23 },
+  ];
+});
+
+/**
+ * The youth teams of every fixture national team, in the game's order: kind, age limit (none for some, as in the game)
+ * and share of the senior team's reputation. Their reputations, once read or written, are kept by team UID and kind.
+ */
+const NATIONAL_YOUTH: readonly { kind: number; ageLimit: number | null; share: number }[] = [
+  { kind: 9, ageLimit: 23, share: 0.8 },
+  { kind: 33, ageLimit: null, share: 0.75 },
+  { kind: 10, ageLimit: 21, share: 0.7 },
+  { kind: 18, ageLimit: 20, share: 0.6 },
+  { kind: 11, ageLimit: 19, share: 0.5 },
+  { kind: 12, ageLimit: null, share: 0.4 },
+];
+const youthReputations = new Map<string, number>();
+
+/** The reputation of the youth team of kind `kind` of the national team `team`. */
+function youthReputation(team: NationalTeamSummary, kind: number): number {
+  const key = `${team.uid}.${kind}`;
+  const share = NATIONAL_YOUTH.find((youth) => youth.kind === kind)?.share ?? 0.5;
+  return youthReputations.get(key) ?? Math.round((team.reputation ?? 0) * share);
+}
+
+const nationalExposure = new Map<string, (number | null)[]>();
+const nationalTacticsUndo = new Map<number, { key: string; before: (number | null)[]; after: (number | null)[] }>();
+let nationalTacticsPreview: { id: number; uid: number; kind: number; targets: (number | null)[] } | null = null;
+
+function nationalTacticsEvidence(uid: number, kind: number) {
+  const profile = nationalProfile(uid, kind);
+  const activeTactic = kind === 0 && profile.squad.players.length > 0;
+  const rows = profile.squad.players.map((player, index) => ({
+    uid: player.uid,
+    name: player.name,
+    exposure: activeTactic
+      ? nationalExposure.get(`${uid}:${kind}:${player.uid}`) ?? [8375, 7100, null, 10000, 9580, 6400 + index * 40]
+      : [null, null, null, null, null, null],
+    problem: null,
+  }));
+  return { activeTactic, squadSize: rows.length, players: rows };
+}
+
+function previewNationalTactics(uid: number, kind: number, targets: (number | null)[] = Array(6).fill(100)) {
+  if (targets.length !== 6 || targets.some((value) => value !== null && (!Number.isInteger(value) || value < 0 || value > 100))) {
+    throw failure("national.tactics", "Informe valores inteiros de 0 a 100.");
+  }
+  const evidence = nationalTacticsEvidence(uid, kind);
+  const canWrite = evidence.players.some((row) => row.exposure.some((v, i) => v !== null && targets[i] !== null && v !== targets[i] * 100));
+  const id = canWrite ? nextMassId++ : null;
+  nationalTacticsPreview = id === null ? null : { id, uid, kind, targets };
+  return { ...evidence, id, locked: null };
+}
+
+function applyNationalTactics(uid: number, kind: number, id: number, selected: number[]) {
+  const plan = nationalTacticsPreview;
+  if (!plan || plan.uid !== uid || plan.kind !== kind || plan.id !== id) {
+    throw failure("national.tactics", "A prévia ficou desatualizada. Gere uma nova prévia.");
+  }
+  nationalTacticsPreview = null;
+  const rows = nationalTacticsEvidence(uid, kind).players.filter((player) => selected.includes(player.uid));
+  if (!rows.length || rows.length !== selected.length ||
+      rows.some((player) => !player.exposure.some((v, i) => v !== null && plan.targets[i] !== null && v !== plan.targets[i] * 100))) {
+    throw failure("national.tactics", "A convocação ou os registros mudaram desde a prévia.");
+  }
+  const batch = nextMassId++;
+  const source = `Tática da seleção · ${nationalProfile(uid, kind).team.name}`;
+  for (const player of rows) {
+    const key = `${uid}:${kind}:${player.uid}`;
+    const before = player.exposure;
+    const after = before.map((value, i) => value === null || plan.targets[i] === null ? value : plan.targets[i] * 100);
+    const changed = before.flatMap((value, i) => value !== null && value !== after[i] ? [i] : []);
+    const mean = (values: (number | null)[]) =>
+      Math.floor(changed.reduce((sum, index) => sum + (values[index] ?? 0), 0) / changed.length);
+    const logId = changes.length + 1;
+    nationalExposure.set(key, after);
+    nationalTacticsUndo.set(logId, { key, before, after });
+    changes.push({
+      id: logId,
+      at: Date.now(),
+      name: player.name,
+      entity: "player",
+      uid: player.uid,
+      field: "national_tactics.exposure",
+      old: mean(before),
+      new: mean(after),
+      undoneAt: null,
+      earlier: false,
+      undoable: true,
+      batch,
+      source,
+    });
+  }
+  return { batch, applied: rows.length, failed: [] };
+}
+
+/** What the tab says of the fixture: it has national teams, unless the address of the page says it has not. */
+function mockNationalStatus(): NationalStatus {
+  const asked = new URLSearchParams(window.location.search).get("nationals");
+  if (asked === "off" || asked === "unreadable") {
+    return { available: false, reason: asked === "off" ? "build" : "unreadable", teams: 0 };
+  }
+  return { available: true, teams: nationals.length };
+}
+
+/**
+ * A national team with its teams, and the players of the one of kind `kind` (the senior team by default): the fixture's
+ * players of its nation, those under the age limit for a youth team, as the game lists a squad.
+ */
+function nationalProfile(uid: number, kind: number | null): NationalProfile {
+  const team = nationals.find((n) => n.uid === uid);
+  if (!team) {
+    throw failure("app.notFound", `No national team with id ${uid}`, { entity: "nationalTeam", uid });
+  }
+  const youth = NATIONAL_YOUTH.find((candidate) => candidate.kind === kind);
+  const ageLimit = youth?.ageLimit ?? null;
+  const ofNation = players.filter((p) => p.nationUid === team.nationUid && (isWoman(p.uid) ?? false) === team.women);
+  // A youth team lists the young players of the nation; one without an age limit lists none in the fixture.
+  const squadOf = (side: { ageLimit: number | null } | undefined) =>
+    side === undefined ? ofNation : side.ageLimit === null ? [] : ofNation.filter((p) => (p.age ?? 99) <= side.ageLimit!);
+  const listed = squadOf(youth);
+  const squad: SquadPlayer[] = listed.map((row) => {
+    const d = details(row);
+    return {
+      ...row,
+      playsHere: true,
+      loan: null,
+      condition: d.condition,
+      matchSharpness: d.matchSharpness,
+      jadedness: d.jadedness,
+      morale: d.morale,
+      cohesion: null,
+      tactics: null,
+      trains: false,
+      concernedTeammates: 0,
+      injuries: d.injuries.length,
+      bans: d.bans.length,
+      attributesFrozen: false,
+      fitnessFrozen: false,
+      positionsFrozen: false,
+    };
+  });
+  const teams: NationalSide[] = [
+    { index: 0, kind: 0, ageLimit: null, reputation: team.reputation ?? 0, players: ofNation.length },
+    ...NATIONAL_YOUTH.map((side, i) => ({
+      index: i + 1,
+      kind: side.kind,
+      ageLimit: side.ageLimit,
+      reputation: youthReputation(team, side.kind),
+      players: squadOf(side).length,
+    })),
+  ];
+  const shown = teams.find((side) => side.kind === (youth?.kind ?? 0))!;
+  return {
+    team: { ...team, players: ofNation.length },
+    teams,
+    squad: { index: shown.index, kind: shown.kind, ageLimit, captain: null, viceCaptain: null, players: squad },
+  };
+}
+
+/** Whether `club` keeps to `filter`, as the real `ClubFilter::matches` has it; `leagues` leaves the league out. */
+function clubMatches(club: ClubSummary, filter: ClubFilter, leagues = false): boolean {
+  const nation = filter.nation?.trim();
+  return (
+    (filter.women === undefined || club.women === filter.women) &&
+    (!nation || (club.nation !== null && fold(club.nation).includes(fold(nation)))) &&
+    (leagues || filter.leagueUid === undefined || club.leagueUid === filter.leagueUid) &&
+    (filter.minReputation === undefined || (club.reputation !== null && club.reputation >= filter.minReputation)) &&
+    (filter.maxReputation === undefined || (club.reputation !== null && club.reputation <= filter.maxReputation))
+  );
+}
+
+/**
+ * What the fixture leagues pay, by UID, as the editor changed them: the amounts read from FM27 for #123, a list by
+ * position as long as the league has clubs (the Premier League's, cut short or carried on), and for one league a stage
+ * that pays per match only, in several groups alike.
+ */
+const leaguePrizeSets = new Map<number, CompetitionPrizes>();
+
+/** The stage of a league prize change, by the change's id, which its Undo writes the old amount back into. */
+const prizeUndo = new Map<number, CompetitionPrizes["stages"][number]>();
+
+const PREMIER_LIST = [
+  53_100_000, 50_400_000, 47_700_000, 45_000_000, 42_400_000, 39_800_000, 37_100_000, 34_500_000, 31_900_000, 29_100_000,
+  26_500_000, 23_800_000, 21_200_000, 18_600_000, 15_900_000, 13_300_000, 10_700_000, 7_900_000, 5_300_000, 2_600_000,
+];
+
+function mockLeague(club: ClubSummary): CompetitionPrizes | null {
+  const uid = club.leagueUid;
+  if (uid === null) {
+    return null;
+  }
+  const kept = leaguePrizeSets.get(uid);
+  if (kept) {
+    return kept;
+  }
+  const places = clubs.filter((c) => c.leagueUid === uid).length;
+  const stage = (byPosition: number[], win = 0, draw = 0, loss = 0, count = 1, future = false) => ({
+    future,
+    count,
+    byPosition,
+    win,
+    draw,
+    loss,
+  });
+  const league: CompetitionPrizes = {
+    uid,
+    name: club.league ?? "",
+    shortName: null,
+    nationUid: null,
+    nation: club.leagueNation,
+    stages:
+      uid === 12
+        ? // The second division: per match only, in two groups alike, and a play-off not started yet.
+          [stage([], 114_699, 57_964, 1_229, 2), stage([2_147_580, 2_147_580, 2_147_580], 0, 0, 0, 1, true)]
+        : [stage(Array.from({ length: Math.max(places, 2) }, (_, at) => PREMIER_LIST[Math.min(at, 19)] - at * 1000))],
+  };
+  leaguePrizeSets.set(uid, league);
+  return league;
+}
+
+/** `club_sponsorships`: made-up deals, as the game's Sponsorship screen names them; the first club's list is empty. */
+function mockSponsorships(uid: number): ClubSponsorships {
+  if (clubs[0]?.uid === uid) {
+    return { unavailable: null, deals: [] };
+  }
+  const deal = (
+    kind: number,
+    name: string | null,
+    start: [number, number, number],
+    end: [number, number, number],
+    perSeason: number,
+    years: number,
+    percent = 0,
+  ): Sponsorship => ({
+    kind,
+    name,
+    start: { year: start[0], month: start[1], day: start[2] },
+    end: { year: end[0], month: end[1], day: end[2] },
+    years,
+    total: perSeason * years,
+    perSeason,
+    percent,
+    rises: kind === 22,
+    reputation: 6000,
+    ended: end[0] <= 2026,
+  });
+  return {
+    unavailable: null,
+    deals: [
+      deal(22, "Kit Manufacturer", [2021, 7, 1], [2027, 6, 30], 143_171, 6, 15),
+      deal(17, null, [2025, 7, 2], [2028, 6, 30], 0, 3),
+      deal(1, "Main Kit", [2026, 6, 1], [2027, 6, 30], 257_709, 1),
+      deal(11, "Back of Shirt", [2026, 7, 1], [2027, 6, 30], 42_951, 1, 35),
+      deal(12, "Shorts", [2025, 7, 1], [2026, 6, 30], 73_017, 1),
+    ],
+  };
+}
+
+/** `league_prizes`: what the league of the club `uid` pays. */
+function mockLeaguePrizes(uid: number): LeaguePrizes {
+  const club = clubs.find((c) => c.uid === uid);
+  return { unavailable: null, league: club ? mockLeague(club) : null };
+}
+
+/** `set_league_prizes`: sets `amounts` in the stage `index` of the club's league, logging each amount changed. */
+function setLeaguePrizes(uid: number, index: number, amounts: PrizeInput[]): LeaguePrizesSet {
+  const club = clubs.find((c) => c.uid === uid)!;
+  const league = mockLeague(club)!;
+  const stage = league.stages[index];
+  const logged: LoggedChange[] = [];
+  const batch = amounts.length > 1 ? 900 + changes.length : null;
+  for (const amount of amounts) {
+    const field = amount.kind === "place" ? `prize.place.${amount.place}` : `prize.${amount.kind}`;
+    const old = amount.kind === "place" ? stage.byPosition[amount.place - 1] : stage[amount.kind];
+    if (amount.kind === "place") {
+      stage.byPosition[amount.place - 1] = amount.pounds;
+    } else {
+      stage[amount.kind] = amount.pounds;
+    }
+    const change: LoggedChange = {
+      id: changes.length + 1,
+      at: Date.now(),
+      name: club.name,
+      entity: "club",
+      uid,
+      field,
+      old,
+      new: amount.pounds,
+      undoneAt: null,
+      earlier: false,
+      undoable: true,
+      batch,
+      prize: { league: league.name, leagueUid: league.uid, settings: stage.count },
+    };
+    changes.push(change);
+    prizeUndo.set(change.id, stage);
+    logged.push({ ...change });
+  }
+  return { changes: logged, league: structuredClone(league) };
+}
+
+/** `club_leagues`: the leagues the clubs `filter` selects play in, by nation, a nation's best known first. */
+function mockLeagues(filter: ClubFilter): League[] {
+  const byUid = new Map<number, League>();
+  for (const club of clubs.filter((c) => clubMatches(c, filter, true))) {
+    if (club.leagueUid === null || club.league === null) {
+      continue;
+    }
+    const league = byUid.get(club.leagueUid) ?? { uid: club.leagueUid, name: club.league, nation: club.leagueNation, clubs: 0, reputation: 0 };
+    league.clubs++;
+    league.reputation = Math.max(league.reputation, club.reputation ?? 0);
+    byUid.set(club.leagueUid, league);
+  }
+  return [...byUid.values()].sort(
+    (a, b) => (a.nation ?? "\uffff").localeCompare(b.nation ?? "\uffff") || b.reputation - a.reputation || a.name.localeCompare(b.name),
+  );
+}
+
+const supportersWritten = new Map<number, {
+  revision: number;
+  traits: Record<string, number>;
+  mix: Record<string, number>;
+}>();
+const mixKeys = ["hardcore", "core", "family", "fair_weather", "corporate", "casual"];
+const traitKeys = ["loyalty", "passion", "patience", "affluence", "temperament", "expectations"];
+
+/** Made-up but self-consistent profile for a fixture club; women's clubs have no finances. */
+function clubDetails(club: ClubSummary): ClubDetails {
+  const next = random(club.uid);
+  const rating = () => Math.round(5 + next() * 15);
+  const mix = [10, 35, 15, 20, 6, 14];
+  const stored = supportersWritten.get(club.uid);
+  return withWrittenClub({
+    ...club,
+    seasonTickets: Math.round(5000 + next() * 45000),
+    socialMedia: Math.round(next() * 9_000_000),
+    supporterMix: stored?.mix ?? Object.fromEntries(mixKeys.map((k, n) => [k, mix[n]])),
+    supporterTraits: Object.assign(Object.fromEntries(traitKeys.map((k) => [k, rating()])), stored?.traits),
+    supporterAccess: { revision: String(stored?.revision ?? 0), traits: true, mix: true },
+    facilities: Object.fromEntries(
+      ["training", "youth_facilities", "youth_coaching", "youth_recruitment", ...(club.women ? [] : ["corporate"])].map((k) => [k, rating()]),
+    ),
+    finances: club.women
+      ? null
+      : {
+          balance: Math.round((next() - 0.2) * 200_000_000),
+          transferBudget: Math.round(next() * 60_000_000),
+          wageBudget: Math.round(1_000_000 + next() * 3_000_000),
+          totalWageBudget: Math.round(1_200_000 + next() * 3_200_000),
+          ticketPrice: Math.round(20 + next() * 60),
+        },
+    stadium: stadiumOf(club, next),
+  });
+}
+
+/** A made-up stadium for `club`: all seated, as in the top leagues, with room to grow. */
+function stadiumOf(club: ClubSummary, next: () => number): ClubDetails["stadium"] {
+  const capacity = Math.round(8000 + next() * 60000);
+  stadiumCapacities.set(club.uid, capacity);
+  return { key: `demo-stadium-${club.uid}`, name: stadiumNameOf(club), capacity, seating: capacity, used: 0, expansion: Math.round(capacity * 1.25) };
+}
+
+function demoStadiumPlace(club: ClubSummary) {
+  const cities: Record<string, string> = {
+    England: "Northbridge", Germany: "Lindenau", Spain: "Riverside",
+    Portugal: "Vila do Porto", Türkiye: "Kuzey",
+  };
+  return {
+    stadiumName: stadiumNameOf(club),
+    stadiumUid: 100_000 + club.uid,
+    city: (club.nation && cities[club.nation]) || club.shortName || club.name,
+    country: club.nation,
+  };
+}
+
+function demoStadiumDetails(club: ClubSummary): StadiumDetails {
+  const capacity = stadiumCapacities.get(club.uid) ?? 0;
+  const fields: Record<string, StadiumValue> = {
+    environment: 4, ownerType: 1, seatColour: 0xD1C128, decay: 3,
+    built: { year: 1958, month: 4, day: 12 }, rebuilt: { year: 2015, month: 7, day: 9 },
+    latitude: 52.5, longitude: 13.41,
+    trainingGround: false, noContinentalFinal: false, extinct: false, covered: false,
+    retractableRoof: false, undersoilHeating: true, digitalBoards: true,
+    allSeater: capacity, national: 2, nationalU21: 0, nationalU19: 0,
+    pitchType: 8, pitchCondition: 185, deterioration: 3, recovery: 15,
+    pitchRelaid: { year: 2025, month: 6, day: 11 }, pitchRelay: { year: 2027, month: 7, day: 3 },
+    length: 105, width: 68, internationalLength: 105, internationalWidth: 68,
+    minLength: 90, minWidth: 55, maxLength: 110, maxWidth: 75,
+  };
+  const values = written.get(`club:${club.uid}`) ?? {};
+  for (const [key, original] of Object.entries(fields)) {
+    const field = `stadium.${key}`;
+    const value = values[field];
+    if (value === undefined) continue;
+    if (typeof original === "boolean") fields[key] = value !== 0;
+    else if (typeof original === "object") fields[key] = dateFromNumber(value) ?? original;
+    else if (key === "latitude" || key === "longitude") fields[key] = value / 1_000_000;
+    else fields[key] = isPitchDimension(field) ? value / 10 : value;
+  }
+  const weights = [21, 8, 12, 9, 22, 8, 12, 8];
+  let placed = 0;
+  const stands = standPositions.map((_, index) => {
+    const key = `stadium.stand.${index}`;
+    const original = index === weights.length - 1 ? capacity - placed : Math.floor(capacity * weights[index] / 100);
+    placed += original;
+    return {
+      index, capacity: values[`${key}.capacity`] ?? original,
+      roof: Boolean(values[`${key}.roof`] ?? (index !== 2)),
+      seats: Boolean(values[`${key}.seats`] ?? true),
+      tunnel: Boolean(values[`${key}.tunnel`] ?? (index === 0)),
+    };
+  });
+  const nearby = clubs.find(other => other.uid !== club.uid && other.nation === club.nation);
+  return { ...demoStadiumPlace(club), key: `demo-stadium-${club.uid}`, owner: club.name,
+    nearby: nearby ? stadiumNameOf(nearby) : null, fields, stands };
+}
+
+/** A date as a number that orders like the date. */
+const dayNumber = (date: FmDate) => (date.year * 100 + date.month) * 100 + date.day;
+
+/** Whether `text` contains `needle`, ignoring accents and case; an empty needle matches anything. */
+function contains(text: string | null, needle: string | undefined): boolean {
+  const wanted = fold(needle?.trim() ?? "");
+  return wanted === "" || (text !== null && fold(text).includes(wanted));
+}
+
+/**
+ * Whether an attribute as FM shows it keeps to `bound`; as in the real filter, one the person does not have keeps to
+ * none.
+ */
+function holds(bound: AttributeBound, value: number | undefined): boolean {
+  return (
+    value !== undefined &&
+    value > 0 &&
+    (bound.min === undefined || value >= bound.min) &&
+    (bound.max === undefined || value <= bound.max)
+  );
+}
+
+/** The player filter of the real command: fields that are not set match everyone. */
+function matchesPlayerFilter(p: PlayerSummary, f: PlayerFilter): boolean {
+  // The listings and the attributes are in the profile, made only when a filter asks for them.
+  const needsDetails = f.transferListed || f.loanListed || (f.attributes?.length ?? 0) > 0;
+  const d = needsDetails ? details(p) : null;
+  return (
+    (f.position === undefined || p.positions.includes(f.position)) &&
+    (f.minAge === undefined || (p.age !== null && p.age >= f.minAge)) &&
+    (f.maxAge === undefined || (p.age !== null && p.age <= f.maxAge)) &&
+    (f.minCurrentAbility === undefined || p.currentAbility >= f.minCurrentAbility) &&
+    (f.minPotentialAbility === undefined || p.potentialAbility >= f.minPotentialAbility) &&
+    contains(p.nation, f.nation) &&
+    contains(p.club, f.club) &&
+    (f.clubUid === undefined || p.clubUid === f.clubUid) &&
+    (!f.freeAgents || p.club === null) &&
+    (f.contractExpiresBy === undefined ||
+      (p.contractExpires !== null && dayNumber(p.contractExpires) <= dayNumber(f.contractExpiresBy))) &&
+    (!f.transferListed || d?.contract?.transferListed === true) &&
+    (!f.loanListed || d?.contract?.loanListed === true) &&
+    (f.women === undefined || isWoman(p.uid) === f.women) &&
+    (f.attributes ?? []).every((bound) => holds(bound, d?.attributes[bound.key]?.value))
+  );
+}
+
+/** The search's own order, as the real index has it: best current ability first, then by name without accents or case. */
+function bySearchRank(a: PlayerSummary, b: PlayerSummary): number {
+  const x = fold(a.name);
+  const y = fold(b.name);
+  return b.currentAbility - a.currentAbility || (x < y ? -1 : x > y ? 1 : 0);
+}
+
+/**
+ * The sort of the real command: unknown values (no age, no club, no contract) go last either way and text
+ * compares without accents or case. Like the real one it is stable, so equals keep the search's order.
+ */
+function playerComparator({ by, ascending }: PlayerOrder): (a: PlayerSummary, b: PlayerSummary) => number {
+  const value = (p: PlayerSummary): string | number | null => {
+    switch (by) {
+      case "currentAbility":
+        return p.currentAbility;
+      case "potentialAbility":
+        return p.potentialAbility;
+      case "age":
+        return p.age;
+      case "name":
+        return fold(p.name);
+      case "nation":
+        return p.nation && fold(p.nation);
+      case "club":
+        return p.club && fold(p.club);
+      case "contractExpires":
+        return p.contractExpires && dayNumber(p.contractExpires);
+    }
+  };
+  return (a, b) => {
+    const x = value(a);
+    const y = value(b);
+    if (x === null || y === null) {
+      return x === y ? 0 : x === null ? 1 : -1;
+    }
+    return x === y ? 0 : (x < y ? -1 : 1) * (ascending ? 1 : -1);
+  };
+}
+
+/** The sort of the real staff command, like `playerComparator`: unknowns last, text without accents or case. */
+function staffComparator({ by, ascending }: StaffOrder): (a: StaffSummary, b: StaffSummary) => number {
+  const value = (s: StaffSummary): string | number | null => {
+    switch (by) {
+      case "currentAbility":
+        return s.currentAbility;
+      case "potentialAbility":
+        return s.potentialAbility;
+      case "age":
+        return s.age;
+      case "name":
+        return fold(s.name);
+      case "nation":
+        return s.nation && fold(s.nation);
+      case "club":
+        return s.club && fold(s.club);
+    }
+  };
+  return (a, b) => {
+    const x = value(a);
+    const y = value(b);
+    if (x === null || y === null) {
+      return x === y ? 0 : x === null ? 1 : -1;
+    }
+    return x === y ? 0 : (x < y ? -1 : 1) * (ascending ? 1 : -1);
+  };
+}
+
+/** The staff filter of the real command: a player-coach has the code of the coaching job plus one, and matches it too. */
+function matchesStaffFilter(s: StaffSummary, f: StaffFilter): boolean {
+  // The contract and the attributes are in the profile, made only when a filter asks for them.
+  const d = f.contractExpiresBy !== undefined || (f.attributes?.length ?? 0) > 0 ? staffDetails(s) : null;
+  const expires = d?.contract?.expires ?? null;
+  return (
+    (f.job === undefined || (s.job !== null && (s.job === f.job || s.job === f.job + 1))) &&
+    (f.minAge === undefined || (s.age !== null && s.age >= f.minAge)) &&
+    (f.maxAge === undefined || (s.age !== null && s.age <= f.maxAge)) &&
+    (f.minCurrentAbility === undefined || s.currentAbility >= f.minCurrentAbility) &&
+    (f.minPotentialAbility === undefined || s.potentialAbility >= f.minPotentialAbility) &&
+    contains(s.nation, f.nation) &&
+    contains(s.club, f.club) &&
+    (!f.unemployed || s.job === null) &&
+    (f.contractExpiresBy === undefined || (expires !== null && dayNumber(expires) <= dayNumber(f.contractExpiresBy))) &&
+    (f.women === undefined || isWoman(s.uid) === f.women) &&
+    (f.attributes ?? []).every((bound) => holds(bound, d?.attributes[bound.key]?.value))
+  );
+}
+
+/** The clubs whose money is frozen in this page; the fixtures have no game days for it to hold through. */
+const frozenMoney = new Set<number>();
+
+/** The players whose attributes are frozen in this page, likewise. */
+const frozenAttributes = new Set<number>();
+
+/** The members of staff whose attributes are frozen in this page, likewise. */
+const frozenStaff = new Set<number>();
+
+/** The players whose energy and match sharpness are frozen in this page, likewise. */
+const frozenFitness = new Set<number>();
+
+/** The players whose positions are frozen in this page, likewise. */
+const frozenPositions = new Set<number>();
+
+/** The fixture connection, once `connect` has been called in this page. */
+let mockConnection: ConnectionInfo | null = null;
+
+/**
+ * `?unknownbuild` in the address previews a version of the game the editor has no profile for: read-only until Edit
+ * anyway. `?failedchecks` previews checks that did not pass: the attributes, the contracts and the in-game date.
+ */
+const unknownBuild = new URLSearchParams(window.location.search).has("unknownbuild");
+const failedChecks = new URLSearchParams(window.location.search).has("failedchecks");
+/** `?refrozen` previews connecting to a save in which players and a club were frozen the last time. */
+const refrozen = new URLSearchParams(window.location.search).has("refrozen");
+/**
+ * `?savechanged` previews the game having loaded a save since the data was read: `save_changed` says so until the data
+ * is read again.
+ */
+let saveChanged = new URLSearchParams(window.location.search).has("savechanged");
+const CHECKS: CheckKey[] = [
+  "gameDate",
+  "players",
+  "positions",
+  "attributes",
+  "personality",
+  "liveValues",
+  "contracts",
+  "teams",
+  "staff",
+  "clubs",
+  "cohesion",
+];
+const FAILING: CheckKey[] = ["gameDate", "attributes", "contracts"];
+
+/**
+ * What the checks find in the fixtures: every one passes, but for the failing ones of `?failedchecks`, and the in-game
+ * date under `?nodate`, as a date that cannot be read never passes.
+ */
+function mockHealth(): Health {
+  return {
+    results: CHECKS.map((check) => {
+      const passed = !(failedChecks && FAILING.includes(check)) && !(check === "gameDate" && gameDate === null);
+      return { check, passed, fit: passed ? 2000 : 640, sampled: 2000 };
+    }),
+  };
+}
+
+/** The report Copy diagnostics copies, worded as the Rust side words it (`diagnostics_report`), for the fixtures. */
+function mockReport(connection: ConnectionInfo): string {
+  const share = (value: number) => `${Math.round(value * 100)}`.padStart(3);
+  const array = (label: string, found: ArrayRef | null) =>
+    found
+      ? `  ${label.padEnd(8)} game_plugin.dll+0x${found.pairRva.toString(16)}  ${String(found.count).padStart(7)} ` +
+        `elements  ${share(found.confidence)}% of samples decoded, ${share(found.named)}% by a name`
+      : `  ${label.padEnd(8)} not found`;
+  const allowed = connection.knownBuild
+    ? ""
+    : `; editing this build ${connection.editable ? "was allowed" : "is not allowed yet"} (Edit anyway)`;
+  const { arrays, health } = connection;
+  return [
+    "FMLibreEditor (browser preview, sample data)",
+    `Game: FM27 Game Pass ${game.packageVersion}`,
+    "game_plugin.dll build: size of image 0x175da000, link timestamp 0x6ae563a1",
+    `Build profile: ${connection.profile ?? "none for this build"}`,
+    `Writing: the system lets the app write to the game${allowed}`,
+    `In-game date: ${connection.gameDate ? "2026-09-09 (game_plugin.dll+0x56257c8, from the build profile)" : "none"}`,
+    "Retirement manager: game_plugin.dll+0x5675060 (from the build profile)",
+    arrays.fromProfile ? "Entity arrays (from the build profile, checked):" : "Entity arrays:",
+    array("players", arrays.players),
+    array("staff", arrays.staff),
+    array("clubs", arrays.clubs),
+    "Checks:",
+    ...health.results.map(
+      (result) =>
+        `  ${result.passed ? "pass" : "FAIL"}  ${result.check.padEnd(12)} ${String(result.fit).padStart(5)} of ` +
+        `${String(result.sampled).padStart(5)} fit`,
+    ),
+    "",
+  ].join("\n");
+}
+
+/**
+ * `?macos` in the address previews the connect panel on macOS: the bridge is not set up, Steam is running, and the game
+ * was started without the bridge. The first set-up meets a running Steam, as the real one would; the next one works.
+ */
+const macPreview = new URLSearchParams(window.location.search).has("macos");
+/** `?nodate` previews a version of the game whose in-game date the editor cannot read. */
+const gameDate = new URLSearchParams(window.location.search).has("nodate") ? null : GAME_DATE;
+const notSetUp = (): BridgeInfo => ({
+  ready: false,
+  installed: false,
+  launchOption:
+    'DYLD_INSERT_LIBRARIES="/Users/me/Library/Application Support/FMLibreEditor/libfmlibre_bridge.dylib" %command%',
+  steamRunning: true,
+  accounts: [{ id: "123456789", launchOptions: null, loadsBridge: false }],
+});
+let mockBridge = notSetUp();
+
+export async function mockInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  switch (command) {
+    case "detect_game": {
+      const noBridge: Failure = {
+        code: "memory.noBridge",
+        params: { pid: String(game.pid) },
+        message: `macOS does not let FMLibreEditor into the game (pid ${game.pid}): it was started without the bridge`,
+      };
+      const reachable = !macPreview || mockBridge.ready;
+      const detection: Detection = {
+        elevated: false,
+        games: [
+          reachable
+            ? { pid: game.pid, info: game, pluginLoaded: true, error: null }
+            : { pid: game.pid, info: null, pluginLoaded: false, error: noBridge },
+        ],
+        bridge: macPreview ? mockBridge : null,
+      };
+      return detection as T;
+    }
+    case "set_up_bridge": {
+      const wasRunning = mockBridge.steamRunning;
+      mockBridge = { ...mockBridge, installed: true, steamRunning: false };
+      if (wasRunning) {
+        const failure: Failure = { code: "setup.steamRunning", params: {}, message: "Steam is running" };
+        throw failure;
+      }
+      const launchOptions = mockBridge.launchOption;
+      mockBridge = { ...mockBridge, ready: true, accounts: [{ id: "123456789", launchOptions, loadsBridge: true }] };
+      return mockBridge as T;
+    }
+    case "remove_bridge":
+      mockBridge = { ...notSetUp(), steamRunning: false };
+      return mockBridge as T;
+    case "bridge_status":
+      return (macPreview ? mockBridge : null) as T;
+    case "connect": {
+      const info: ConnectionInfo = {
+        game,
+        profile: unknownBuild ? null : "FM27 0.9.2409.0 (Game Pass)",
+        arrays: {
+          players: { pairRva: 0x5681dc0, count: players.length, confidence: 1, named: 1, fromProfile: !unknownBuild },
+          staff: { pairRva: 0x5681e08, count: 120, confidence: 1, named: 1, fromProfile: !unknownBuild },
+          clubs: { pairRva: 0x5681f78, count: CLUBS.length, confidence: 1, named: 1, fromProfile: !unknownBuild },
+          fromProfile: !unknownBuild,
+        },
+        players: players.length,
+        staff: staff.length,
+        clubs: clubs.length,
+        gameDate: failedChecks ? null : gameDate,
+        loadMs: 480,
+        editable: !unknownBuild,
+        writable: true,
+        knownBuild: !unknownBuild,
+        // The fixtures know who is a woman, as a layout that places the gender flags does.
+        genderKnown: true,
+        arrangesTransfers: true,
+        health: mockHealth(),
+      };
+      mockConnection = info;
+      if (!refrozen) {
+        return info as T;
+      }
+      // What a restart of the app finds frozen in this save: the attributes of the first two players, the energy and
+      // sharpness of the first seven, and the first club, whose stadium was renamed too, with one more that waits.
+      for (const player of players.slice(0, 2)) {
+        frozenAttributes.add(player.uid);
+      }
+      for (const player of players.slice(0, 7)) {
+        frozenFitness.add(player.uid);
+      }
+      frozenMoney.add(clubs[0].uid);
+      for (const member of staff.slice(0, 2)) {
+        frozenStaff.add(member.uid);
+      }
+      stadiumNames.set(clubs[0].uid, `${clubs[0].shortName} Arena`);
+      const again: Refrozen = {
+        players: players.slice(0, 2).map((p) => p.name),
+        staff: staff.slice(0, 2).map((s) => s.name),
+        clubs: [clubs[0].name],
+        fitness: players.slice(0, 7).map((p) => p.name),
+        positions: [],
+        stadiums: [stadiumNameOf(clubs[0])],
+        waiting: 1,
+      };
+      return { ...info, refrozen: again } as T;
+    }
+    case "graphics_info":
+      // A plain browser has no graphics packs: every picture falls back.
+      return { root: null, ready: true, counts: { clubLogos: 0, faces: 0, flags: 0, competitionLogos: 0 } } as T;
+    case "allow_editing": {
+      if (!mockConnection) {
+        throw failure("app.notConnected", "Not connected to the game");
+      }
+      mockConnection = { ...mockConnection, editable: mockConnection.writable };
+      return mockConnection as T;
+    }
+    case "diagnostics":
+      if (!mockConnection) {
+        throw failure("app.notConnected", "Not connected to the game");
+      }
+      return mockReport(mockConnection) as T;
+    case "current_connection":
+      // Like the real command after a window reload; here a reload starts the fixtures afresh, so it is null then.
+      return (mockConnection && { ...mockConnection, loadMs: 0 }) as T;
+    case "save_changed":
+      return (mockConnection !== null && saveChanged) as T;
+    case "reload": {
+      saveChanged = false;
+      const reloaded: ReloadInfo = {
+        players: players.length,
+        staff: staff.length,
+        clubs: clubs.length,
+        gameDate: failedChecks ? null : gameDate,
+        health: mockHealth(),
+      };
+      return reloaded as T;
+    }
+    case "search_players": {
+      const query = String(args?.query ?? "");
+      const offset = Number(args?.offset ?? 0);
+      const limit = Number(args?.limit ?? 200);
+      const filter = (args?.filter ?? {}) as PlayerFilter;
+      // Without an order the best current ability comes first, as with the real command.
+      const order = (args?.order ?? { by: "currentAbility", ascending: false }) as PlayerOrder;
+      const words = fold(query).split(/\s+/).filter(Boolean);
+      const hits = players
+        .filter((p) => String(p.uid) === query.trim() || words.every((w) => fold(`${p.name} ${p.fullName ?? ""}`).includes(w)))
+        .filter((p) => matchesPlayerFilter(p, filter))
+        .sort(bySearchRank)
+        .sort(playerComparator(order));
+      const page: PlayerPage = { total: hits.length, rows: hits.slice(offset, offset + limit) };
+      return page as T;
+    }
+    case "search_stadiums": {
+      const query = fold(String(args?.query ?? ""));
+      const words = query.split(/\s+/).filter(Boolean);
+      const rows = clubs.flatMap(club => {
+        const stadium = demoStadiumPlace(club);
+        const searchable = fold([stadium.stadiumName, stadium.city, stadium.country, club.name, club.shortName].join(" "));
+        return words.every(word => searchable.includes(word) || (word === query && word === String(stadium.stadiumUid)))
+          ? [{ ...club, ...stadium }] : [];
+      });
+      return { total: rows.length, rows: rows.slice(0, Math.min(200, Number(args?.limit ?? 200))) } as T;
+    }
+    case "stadium_details": {
+      const club = clubs.find(club => club.uid === Number(args?.uid));
+      const stadium = club && clubDetails(club).stadium;
+      return (club && stadium ? demoStadiumDetails(club) : null) as T;
+    }
+    case "search_clubs": {
+      const query = String(args?.query ?? "");
+      const limit = Number(args?.limit ?? 200);
+      const filter = (args?.filter ?? {}) as ClubFilter;
+      const kindOf = clubs.find((c) => c.uid === args?.kindOf);
+      // A free agent's kind is his own, and so is that of a member of staff with no club.
+      const kindOfPlayer = typeof args?.kindOfPlayer === "number" ? isWoman(args.kindOfPlayer) : undefined;
+      const kindOfStaff = typeof args?.kindOfStaff === "number" ? isWoman(args.kindOfStaff) : undefined;
+      const women = kindOf ? kindOf.women : (kindOfPlayer ?? kindOfStaff ?? filter.women);
+      const words = fold(query).split(/\s+/).filter(Boolean);
+      const hits = clubs
+        .filter((c) => String(c.uid) === query.trim() || words.every((w) => fold(`${c.name} ${c.shortName ?? ""}`).includes(w)))
+        .filter((c) => clubMatches(c, { ...filter, women }))
+        .sort((a, b) => (b.reputation ?? -1) - (a.reputation ?? -1) || a.name.localeCompare(b.name));
+      const page: ClubPage = { total: hits.length, rows: hits.slice(0, limit) };
+      return page as T;
+    }
+    case "national_status":
+      return mockNationalStatus() as T;
+    case "search_national_teams": {
+      const query = String(args?.query ?? "");
+      const limit = Number(args?.limit ?? 200);
+      const words = fold(query).split(/\s+/).filter(Boolean);
+      const hits = nationals
+        .filter((n) => String(n.uid) === query.trim() || words.every((w) => fold(`${n.name} ${n.code ?? ""}`).includes(w)))
+        .filter((n) => args?.women === undefined || args?.women === null || n.women === args.women)
+        .sort((a, b) => (b.reputation ?? -1) - (a.reputation ?? -1) || a.name.localeCompare(b.name));
+      return { total: hits.length, rows: hits.slice(0, limit) } as T;
+    }
+    case "national_tactical_evidence":
+      return nationalTacticsEvidence(Number(args?.uid), Number(args?.kind)) as T;
+    case "preview_national_tactics":
+      return previewNationalTactics(Number(args?.uid), Number(args?.kind), args?.targets as (number | null)[] | undefined) as T;
+    case "apply_national_tactics":
+      return applyNationalTactics(Number(args?.uid), Number(args?.kind), Number(args?.id), args?.selected as number[]) as T;
+    case "national_squad":
+      return nationalProfile(Number(args?.uid), args?.kind === undefined || args?.kind === null ? null : Number(args.kind)) as T;
+    case "club_leagues":
+      return mockLeagues((args?.filter ?? {}) as ClubFilter) as T;
+    case "club_sponsorships":
+      return mockSponsorships(Number(args?.club)) as T;
+    case "league_prizes":
+      return mockLeaguePrizes(Number(args?.club)) as T;
+    case "set_league_prizes":
+      return setLeaguePrizes(Number(args?.club), Number(args?.stage), (args?.amounts ?? []) as PrizeInput[]) as T;
+    case "club_details": {
+      const uid = Number(args?.uid);
+      const club = clubs.find((c) => c.uid === uid);
+      if (!club) {
+        throw notFound("club", uid);
+      }
+      return clubDetails(club) as T;
+    }
+    case "set_club_supporters": {
+      const uid = Number(args?.uid);
+      const club = clubs.find(club => club.uid === uid);
+      if (!club) throw notFound("club", uid);
+      const details = clubDetails(club);
+      if (args?.revision !== details.supporterAccess?.revision) throw Error("O jogo atualizou os dados da torcida.");
+      const { traits, mix } = args?.edit as { traits?: number[]; mix?: number[] };
+      if (traits && (traits.length !== 6 || traits.some(value => !Number.isInteger(value) || value < 1 || value > 20))) {
+        throw Error("Atributos inválidos.");
+      }
+      if (mix && (mix.length !== 6 || mix.some(value => !Number.isInteger(value) || value < 0)
+        || mix.reduce((sum, value) => sum + value, 0) !== 100)) throw Error("Percentuais inválidos.");
+      supportersWritten.set(uid, {
+        revision: Number(args?.revision) + 1,
+        traits: traits ? Object.fromEntries(traitKeys.map((key, at) => [key, traits[at]])) : details.supporterTraits,
+        mix: mix ? Object.fromEntries(mixKeys.map((key, at) => [key, mix[at]])) : details.supporterMix,
+      });
+      return {} as T;
+    }
+    case "search_staff": {
+      const query = String(args?.query ?? "");
+      const offset = Number(args?.offset ?? 0);
+      const limit = Number(args?.limit ?? 200);
+      const filter = (args?.filter ?? {}) as StaffFilter;
+      // Without an order the human manager comes first, then the best current ability, as with the real command.
+      const order = args?.order as StaffOrder | undefined;
+      const words = fold(query).split(/\s+/).filter(Boolean);
+      const hits = staff
+        .filter((s) => String(s.uid) === query.trim() || words.every((w) => fold(`${s.name} ${s.fullName ?? ""}`).includes(w)))
+        .filter((s) => matchesStaffFilter(s, filter))
+        .sort((a, b) => Number(b.isHuman) - Number(a.isHuman) || b.currentAbility - a.currentAbility || a.name.localeCompare(b.name));
+      if (order) {
+        hits.sort(staffComparator(order));
+      }
+      const page: StaffPage = { total: hits.length, rows: hits.slice(offset, offset + limit) };
+      return page as T;
+    }
+    case "staff_details": {
+      const uid = Number(args?.uid);
+      const member = staff.find((s) => s.uid === uid);
+      if (!member) {
+        throw notFound("staff", uid);
+      }
+      return staffDetails(member) as T;
+    }
+    case "player_details": {
+      const uid = Number(args?.uid);
+      const player = players.find((p) => p.uid === uid);
+      if (!player) {
+        throw notFound("player", uid);
+      }
+      return details(player) as T;
+    }
+    case "edit_fields":
+      return fieldTable(args?.entity as EditEntity) as T;
+    case "freeze_money": {
+      const club = Number(args?.club);
+      if (args?.frozen) {
+        frozenMoney.add(club);
+      } else {
+        frozenMoney.delete(club);
+      }
+      return [...frozenMoney] as T;
+    }
+    case "frozen_clubs":
+      return [...frozenMoney] as T;
+    case "freeze_attributes": {
+      const uid = Number(args?.uid);
+      if (args?.frozen) {
+        frozenAttributes.add(uid);
+      } else {
+        frozenAttributes.delete(uid);
+      }
+      return [...frozenAttributes] as T;
+    }
+    case "frozen_players":
+      return [...frozenAttributes] as T;
+    case "freeze_staff_attributes": {
+      const id = Number(args?.id);
+      if (args?.frozen) {
+        frozenStaff.add(id);
+      } else {
+        frozenStaff.delete(id);
+      }
+      return [...frozenStaff] as T;
+    }
+    case "frozen_staff":
+      return [...frozenStaff] as T;
+    case "freeze_fitness": {
+      const uid = Number(args?.uid);
+      if (args?.frozen) {
+        frozenFitness.add(uid);
+      } else {
+        frozenFitness.delete(uid);
+      }
+      return [...frozenFitness] as T;
+    }
+    case "frozen_fitness":
+      return [...frozenFitness] as T;
+    case "freeze_positions": {
+      const uid = Number(args?.uid);
+      if (args?.frozen) {
+        frozenPositions.add(uid);
+      } else {
+        frozenPositions.delete(uid);
+      }
+      return [...frozenPositions] as T;
+    }
+    case "frozen_positions":
+      return [...frozenPositions] as T;
+    case "freeze_team":
+      return freezeTeam(Number(args?.club), Number(args?.team), args?.kind as FreezeKind, Boolean(args?.frozen)) as T;
+    case "export_players":
+    case "export_staff":
+    case "export_clubs": {
+      // Nothing is written in a browser: the report names the file a real export would have.
+      const query = String(args?.query ?? "");
+      const filter = args?.filter ?? {};
+      const selected =
+        command === "export_clubs"
+          ? selectTargets("club", query, { clubFilter: filter as ClubFilter })
+          : command === "export_staff"
+            ? selectTargets("staff", query, { staffFilter: filter as StaffFilter })
+            : selectTargets("player", query, { playerFilter: filter as PlayerFilter });
+      const what = command === "export_clubs" ? "clubs" : command === "export_staff" ? "staff" : "players";
+      const folder = "C:\\Users\\you\\Documents\\FMLibreEditor\\Exports";
+      const two = (n: number) => String(n).padStart(2, "0");
+      const stem = gameDate ? `${what}-${gameDate.year}-${two(gameDate.month)}-${two(gameDate.day)}` : what;
+      const file = `${stem}.${args?.format === "json" ? "json" : "csv"}`;
+      const report: ExportReport = { path: `${folder}\\${file}`, file, folder, count: selected.length, skipped: 0 };
+      return report as T;
+    }
+    case "export_changes": {
+      // Nothing is written in a browser: the report names the file a real export would have, and the rows the window
+      // sent are kept in `window.lastChangesExport` for a look.
+      const rows = (args?.rows ?? []) as unknown[];
+      (window as unknown as { lastChangesExport?: unknown }).lastChangesExport = { rows, format: args?.format };
+      const folder = "C:\\Users\\you\\Documents\\FMLibreEditor\\Exports";
+      const two = (n: number) => String(n).padStart(2, "0");
+      const stem = gameDate ? `changes-${gameDate.year}-${two(gameDate.month)}-${two(gameDate.day)}` : "changes";
+      const file = `${stem}.csv`;
+      const report: ExportReport = { path: `${folder}\\${file}`, file, folder, count: rows.length, skipped: 0 };
+      return report as T;
+    }
+    case "open_export":
+    case "show_export":
+      return null as T;
+    case "max_attributes": {
+      const uid = Number(args?.uid);
+      const player = players.find((p) => p.uid === uid);
+      if (!player) {
+        throw notFound("player", uid);
+      }
+      const report: MassReport = { batch: nextMassId++, applied: 0, failed: [] };
+      setValues(player, ATTRIBUTES.map(bestAttribute), report);
+      return report as T;
+    }
+    case "max_staff_attributes": {
+      const id = Number(args?.id);
+      const member = staff.find((s) => s.uid === id);
+      if (!member) {
+        throw notFound("staff", id);
+      }
+      const report: MassReport = { batch: nextMassId++, applied: 0, failed: [] };
+      setValues(member, STAFF_ATTRIBUTE_ORDER.map(bestStaffAttribute), report, "staff");
+      return report as T;
+    }
+    case "list_nations": {
+      const nations: Nation[] = ALL_NATIONS.map((name) => ({ address: nationAddress(name), uid: 1000 + ALL_NATIONS.indexOf(name), name }));
+      return nations.sort((a, b) => a.name.localeCompare(b.name)) as T;
+    }
+    case "read_values":
+      return currentValues(args?.entity as EditEntity, Number(args?.uid)) as T;
+    case "apply_edits":
+      return applyEdits(args?.entity as EditEntity, Number(args?.uid), (args?.edits ?? []) as FieldEdit[], args?.expectedStadium as string | undefined) as T;
+    case "recall_loan":
+      return recallLoan(Number(args?.uid)) as T;
+    case "extend_contract":
+      return extendContract(args?.entity as Entity, Number(args?.uid), Number(args?.years)) as T;
+    case "change_log":
+      return changes.map((c) => ({ ...c })).reverse() as T;
+    case "undo_change":
+      return undoChange(Number(args?.id)) as T;
+    case "clear_history":
+      changes.length = 0;
+      // The undo notes of the changes are keyed by their ids, which start from 1 again.
+      for (const notes of [staffUndo, tieUndo, clauseUndo, captainUndo]) {
+        notes.clear();
+      }
+      return undefined as T;
+    case "plan_mass_edit":
+      return planMass(
+        args?.entity as Entity,
+        String(args?.query ?? ""),
+        (args?.filters ?? {}) as MassFilters,
+        (args?.operations ?? []) as MassOperation[],
+      ) as T;
+    case "apply_mass_edit":
+      return applyMass(Number(args?.id)) as T;
+    case "undo_batch":
+      return undoMassBatch(Number(args?.batch)) as T;
+    case "plan_club_move": {
+      const terms = (args?.terms ?? {}) as MoveTerms;
+      return planMove(Number(args?.uid), Number(args?.club), terms, args?.fee as number, args?.release as number) as T;
+    }
+    case "plan_arranged_transfer": {
+      const terms = (args?.terms ?? {}) as MoveTerms;
+      return planArranged(Number(args?.uid), Number(args?.club), terms, args?.fee as number) as T;
+    }
+    case "arrange_transfer": {
+      const terms = (args?.terms ?? {}) as MoveTerms;
+      return arrangePlayer(Number(args?.uid), Number(args?.club), terms, args?.fee as number) as T;
+    }
+    case "move_player": {
+      const terms = (args?.terms ?? {}) as MoveTerms;
+      return movePlayer(Number(args?.uid), Number(args?.club), terms, args?.fee as number, args?.release as number) as T;
+    }
+    case "plan_loan_permanent":
+      return planLoanPermanent(Number(args?.uid), (args?.terms ?? {}) as MoveTerms, args?.fee as number) as T;
+    case "make_loan_permanent":
+      return makeLoanPermanent(Number(args?.uid), (args?.terms ?? {}) as MoveTerms, args?.fee as number) as T;
+    case "room_makers":
+      return roomMakers(Number(args?.club)) as T;
+    case "staff_jobs":
+      return [...STAFF_JOBS] as T;
+    case "plan_staff_move":
+      return planStaffMove(
+        Number(args?.uid),
+        Number(args?.club),
+        args?.job as number | undefined,
+        (args?.terms ?? {}) as MoveTerms,
+      ) as T;
+    case "move_staff":
+      return moveStaff(
+        Number(args?.uid),
+        Number(args?.club),
+        args?.job as number | undefined,
+        (args?.terms ?? {}) as MoveTerms,
+      ) as T;
+    case "change_staff_job":
+      return changeStaffJob(Number(args?.uid), Number(args?.job)) as T;
+    case "plan_staff_release":
+      return planStaffRelease(Number(args?.uid)) as T;
+    case "release_staff":
+      return releaseStaff(Number(args?.uid)) as T;
+    case "club_staff":
+      return clubStaffRows(Number(args?.club)) as T;
+    case "release_club_staff":
+      return releaseClubStaff(Number(args?.club)) as T;
+    case "plan_club_staff_move":
+      return planClubStaffMove(Number(args?.club), Number(args?.to)) as T;
+    case "move_club_staff":
+      return moveClubStaff(Number(args?.club), Number(args?.to)) as T;
+    case "plan_club_swap":
+      return planSwap(Number(args?.uid), Number(args?.other)) as T;
+    case "plan_release":
+      return planRelease(Number(args?.uid)) as T;
+    case "release_player":
+      return releasePlayer(Number(args?.uid)) as T;
+    case "heal_player":
+      return healPlayer(Number(args?.uid)) as T;
+    case "lift_bans":
+      return liftBans(Number(args?.uid)) as T;
+    case "stadium_name":
+      return stadiumNameRoom(Number(args?.club)) as T;
+    case "rename_stadium": {
+      const club = Number(args?.club);
+      if (args?.expectedStadium && args.expectedStadium !== `demo-stadium-${club}`) throw failure("stadium.changed", "O estádio do clube mudou.");
+      if (args?.expectedName && args.expectedName !== stadiumNameRoom(club).name) throw failure("stadium.nameChanged", "O nome mudou.");
+      return renameStadium(club, String(args?.name ?? "")) as T;
+    }
+    case "player_names":
+      return playerNamesOf(Number(args?.uid)) as T;
+    case "rename_player":
+      return renamePlayer(
+        Number(args?.uid),
+        args?.kind as NameKind,
+        args?.name === null || args?.name === undefined ? null : String(args.name),
+      ) as T;
+    case "change_clause":
+      return changeClause(
+        Number(args?.uid),
+        Number(args?.index),
+        args?.amount as number | undefined,
+        args?.condition as number | undefined,
+      ) as T;
+    case "remove_clause":
+      return removeClause(Number(args?.uid), Number(args?.index)) as T;
+    case "add_release_clause":
+      return addReleaseClause(Number(args?.uid), Number(args?.amount)) as T;
+    case "keep_playing":
+      return keepPlaying(Number(args?.uid)) as T;
+    case "change_tie":
+      return changeTie(
+        Number(args?.uid),
+        Number(args?.index),
+        args?.nation as number | undefined,
+        args?.club as number | undefined,
+        args?.rule as number | undefined,
+      ) as T;
+    case "remove_tie":
+      return removeTie(Number(args?.uid), Number(args?.index)) as T;
+    case "add_tie":
+      return addTie(Number(args?.uid), args?.tie as TieKind, Number(args?.target), args?.rule as number | undefined) as T;
+    case "homegrown_rules":
+      return [...HOMEGROWN_RULES] as T;
+    case "profile_role_catalog":
+      return profileRoleCatalog() as T;
+    case "scouting_overview":
+      return scoutingOverview({ players, clubs, ratings, women }) as T;
+    case "scouting_suggest":
+      return scoutingSuggest({ players, clubs, ratings, women }, (args?.request ?? {}) as ScoutRequest) as T;
+    case "scouting_opportunities":
+      return scoutingOpportunities({ players, clubs, ratings, women }, (args?.request ?? {}) as OpportunityRequest) as T;
+    case "scouting_similar":
+      return scoutingSimilar({ players, clubs, ratings, women }, (args?.request ?? {}) as SimilarRequest) as T;
+    case "youth_intakes":
+      return youthIntakes({ players, clubs, ratings, women }, (args?.club as number | null) ?? null, cityOf) as T;
+    case "plan_golden_generation":
+      return planGoldenGeneration(Number(args?.club), Number(args?.day), Number(args?.minimum)) as T;
+    case "apply_golden_generation":
+      return applyGoldenGeneration(Number(args?.club), Number(args?.id)) as T;
+    case "birth_cities":
+      return BIRTH_CITIES as T;
+    case "save_scout_report": {
+      // Nothing is written in a browser: the report names the file a real save would have.
+      const player = players.find((p) => p.uid === Number(args?.uid));
+      const name = (player?.name ?? "player")
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter(Boolean)
+        .join("-");
+      const folder = "C:\\Users\\you\\Documents\\FMLibreEditor\\Exports";
+      const two = (n: number) => String(n).padStart(2, "0");
+      const date = gameDate ? `-${gameDate.year}-${two(gameDate.month)}-${two(gameDate.day)}` : "";
+      const file = `scout-report-${name}${date}.${args?.format === "pdf" ? "pdf" : "png"}`;
+      const report: ExportReport = { path: `${folder}\\${file}`, file, folder, count: 1, skipped: 0 };
+      return report as T;
+    }
+    case "club_squads":
+      return clubSquads(Number(args?.uid)) as T;
+    case "set_captain":
+      return setCaptain(Number(args?.club), Number(args?.team), args?.role as CaptainRole, Number(args?.uid)) as T;
+    case "team_action":
+      return teamAction(Number(args?.club), Number(args?.team), args?.action as TeamAction, args?.targets as number[] | undefined, args?.fitness as FitnessTargets | undefined) as T;
+    case "national_team_action":
+      return nationalTeamAction(Number(args?.uid), args?.action as TeamAction, args?.fitness as FitnessTargets | undefined) as T;
+    case "swap_players":
+      return swapPlayers(Number(args?.uid), Number(args?.other)) as T;
+    default:
+      throw new Error(`No fixture for command "${command}"`);
+  }
+}

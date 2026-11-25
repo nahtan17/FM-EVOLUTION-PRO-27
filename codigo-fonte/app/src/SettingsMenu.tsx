@@ -1,0 +1,353 @@
+// The settings menu at the right of the masthead: a button with a gear, which opens a menu of the languages, each with
+// its flag and its own name, and of the currencies the app can show money in, each with its sign and its name. The
+// menu is drawn over the window under its button, as the captain menu of a squad row is (see CaptainMenu.tsx), so that
+// the masthead's styles stay off it.
+
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { CURRENCIES, currency, setCurrency, type Currency } from "./currency";
+import { currencyName, currencySymbolOf } from "./format";
+import { locale, setLocale, type Locale } from "./i18n";
+import { appText } from "./labels";
+import { askToLeave } from "./useProfileEditing";
+
+/** The room the menu keeps between itself and its button. */
+const GAP = 4;
+
+/**
+ * The flag of each language, in a box of 3:2: the Union Jack for English, as FM is British (cut to 3:2 at the sides,
+ * as flag sets do), and the flags of Turkey, Spain, Germany, France, Indonesia, Italy, Japan, South Korea, Russia and
+ * China whole.
+ * Spain's is drawn without the coat of arms, as its civil flag is: at this size the arms would be a smudge. Germany's
+ * (3:5) and Indonesia's (2:3) are drawn at 3:2 like the others. France's and Italy's are tricolours of three vertical
+ * bands, France's in the shades it took back in 2020. Japan's is a red disc of three fifths of the height at the
+ * centre. Russia's is three horizontal bands, as Germany's is. South Korea's follows its construction
+ * sheet: the taegeuk on the diagonal, and around it the four trigrams, each of three bars that are whole or broken.
+ * China's follows its own: on a grid of 30 by 20, the large star at (5, 5) with a radius of 3, and four small ones with
+ * a radius of 1 at (10, 2), (12, 4), (12, 7) and (10, 9), each with a point towards the large star's centre.
+ */
+const FLAGS: Record<Locale, ReactNode> = {
+  pt: (<svg className="language-flag" viewBox="0 0 30 20" aria-hidden="true"><rect width="30" height="20" fill="#229e45"/><path d="M15 2 28 10 15 18 2 10Z" fill="#ffdf00"/><circle cx="15" cy="10" r="5" fill="#15378a"/><path d="M10 9q5-1 10 3" fill="none" stroke="white" strokeWidth="1"/></svg>),
+  en: (
+    <svg className="language-flag" viewBox="7.5 0 45 30" aria-hidden="true">
+      <rect width="60" height="30" fill="#012169" />
+      <path d="M0 0l60 30M60 0L0 30" stroke="#fff" strokeWidth="6" />
+      <path
+        d="M30 15L0 0v2.236L25.528 15zm0 0l30 15v-2.236L34.472 15zm0 0L60 0h-4.472L30 12.764zm0 0L0 30h4.472L30 17.236z"
+        fill="#c8102e"
+      />
+      <path d="M30 0v30M0 15h60" stroke="#fff" strokeWidth="10" />
+      <path d="M30 0v30M0 15h60" stroke="#c8102e" strokeWidth="6" />
+    </svg>
+  ),
+  tr: (
+    <svg className="language-flag" viewBox="0 0 90 60" aria-hidden="true">
+      <rect width="90" height="60" fill="#e30a17" />
+      <g fill="#fff">
+        <path d="M42.675 38.021a15 15 0 1 1 0-16.042 12 12 0 1 0 0 16.042z" />
+        <path d="M41.75 30l13.568-4.408-8.386 11.541V22.867l8.386 11.541z" />
+      </g>
+    </svg>
+  ),
+  es: (
+    <svg className="language-flag" viewBox="0 0 3 2" aria-hidden="true">
+      <rect width="3" height="2" fill="#aa151b" />
+      <rect y="0.5" width="3" height="1" fill="#f1bf00" shapeRendering="crispEdges" />
+    </svg>
+  ),
+  de: (
+    <svg className="language-flag" viewBox="0 0 9 6" aria-hidden="true">
+      <rect width="9" height="6" fill="#ffce00" />
+      <rect width="9" height="4" fill="#dd0000" shapeRendering="crispEdges" />
+      <rect width="9" height="2" fill="#000" shapeRendering="crispEdges" />
+    </svg>
+  ),
+  fr: (
+    <svg className="language-flag" viewBox="0 0 3 2" aria-hidden="true">
+      <rect width="3" height="2" fill="#fff" />
+      <rect width="1" height="2" fill="#000091" shapeRendering="crispEdges" />
+      <rect x="2" width="1" height="2" fill="#e1000f" shapeRendering="crispEdges" />
+    </svg>
+  ),
+  id: (
+    <svg className="language-flag" viewBox="0 0 3 2" aria-hidden="true">
+      <rect width="3" height="2" fill="#fff" />
+      <rect width="3" height="1" fill="#ce1126" shapeRendering="crispEdges" />
+    </svg>
+  ),
+  it: (
+    <svg className="language-flag" viewBox="0 0 3 2" aria-hidden="true">
+      <rect width="3" height="2" fill="#fff" />
+      <rect width="1" height="2" fill="#009246" shapeRendering="crispEdges" />
+      <rect x="2" width="1" height="2" fill="#ce2b37" shapeRendering="crispEdges" />
+    </svg>
+  ),
+  ja: (
+    <svg className="language-flag" viewBox="0 0 3 2" aria-hidden="true">
+      <rect width="3" height="2" fill="#fff" />
+      <circle cx="1.5" cy="1" r="0.6" fill="#bc002d" />
+    </svg>
+  ),
+  ko: (
+    <svg className="language-flag" viewBox="0 0 3 2" aria-hidden="true">
+      <rect width="3" height="2" fill="#fff" />
+      <g transform="translate(1.5 1) rotate(33.69)">
+        <circle r="0.5" fill="#cd2e3a" />
+        <path d="M-0.5 0a0.5 0.5 0 0 0 1 0z" fill="#0047a0" />
+        <circle cx="-0.25" r="0.25" fill="#cd2e3a" />
+        <circle cx="0.25" r="0.25" fill="#0047a0" />
+      </g>
+      <g fill="none" stroke="#000" strokeWidth="0.0833">
+        <path transform="translate(1.5 1) rotate(213.69)" d="M0.792-0.25v0.5M0.917-0.25v0.5M1.042-0.25v0.5" />
+        <path
+          transform="translate(1.5 1) rotate(146.31)"
+          d="M0.792-0.25v0.5M0.917-0.25v0.229m0 0.042v0.229M1.042-0.25v0.5"
+        />
+        <path
+          transform="translate(1.5 1) rotate(-33.69)"
+          d="M0.792-0.25v0.229m0 0.042v0.229M0.917-0.25v0.5M1.042-0.25v0.229m0 0.042v0.229"
+        />
+        <path
+          transform="translate(1.5 1) rotate(33.69)"
+          d="M0.792-0.25v0.229m0 0.042v0.229M0.917-0.25v0.229m0 0.042v0.229M1.042-0.25v0.229m0 0.042v0.229"
+        />
+      </g>
+    </svg>
+  ),
+  ru: (
+    <svg className="language-flag" viewBox="0 0 9 6" aria-hidden="true">
+      <rect width="9" height="6" fill="#d52b1e" />
+      <rect width="9" height="4" fill="#0039a6" shapeRendering="crispEdges" />
+      <rect width="9" height="2" fill="#fff" shapeRendering="crispEdges" />
+    </svg>
+  ),
+  "zh-CN": (
+    <svg className="language-flag" viewBox="0 0 3 2" aria-hidden="true">
+      <rect width="3" height="2" fill="#de2910" />
+      <g fill="#ffde00">
+        <path d="M.5 .2L.567 .407L.785 .407L.609 .535L.676 .743L.5 .615L.324 .743L.391 .535L.215 .407L.433 .407z" />
+        <path d="M.914 .251L.962 .197L.925 .134L.991 .163L1.039 .108L1.033 .18L1.1 .209L1.029 .225L1.022 .297L.985 .235z" />
+        <path d="M1.101 .414L1.166 .382L1.156 .31L1.207 .362L1.272 .33L1.238 .395L1.288 .447L1.217 .434L1.183 .499L1.173 .427z" />
+        <path d="M1.104 .673L1.176 .67L1.196 .6L1.221 .668L1.294 .666L1.237 .71L1.262 .779L1.201 .738L1.144 .783L1.164 .713z" />
+        <path d="M.922 .838L.99 .863L1.035 .806L1.032 .879L1.1 .905L1.03 .924L1.026 .996L.987 .936L.916 .955L.962 .898z" />
+      </g>
+    </svg>
+  ),
+};
+
+/** The languages on offer, in the order of the menu, each with its own name. */
+const LANGUAGES: readonly { id: Locale; name: string }[] = [
+  { id: "pt", name: "Português (Brasil)" },
+  { id: "en", name: "English" },
+  { id: "tr", name: "Türkçe" },
+  { id: "es", name: "Español" },
+  { id: "de", name: "Deutsch" },
+  { id: "fr", name: "Français" },
+  { id: "id", name: "Bahasa Indonesia" },
+  { id: "it", name: "Italiano" },
+  { id: "ja", name: "日本語" },
+  { id: "ko", name: "한국어" },
+  { id: "ru", name: "Русский" },
+  { id: "zh-CN", name: "简体中文" },
+];
+
+/** The name and hover text of the button: "Settings: English, Euro". */
+const BUTTON_LABEL = `${appText.settingsLabel}: ${LANGUAGES.find(({ id }) => id === locale)?.name ?? locale}, ${currencyName()}`;
+
+/** Where the open menu hangs: the window's coordinates of its button, from the right edge and the top. */
+interface Anchor {
+  right: number;
+  bottom: number;
+}
+
+const CHECK = (
+  <svg className="settings-check" viewBox="0 0 20 20" aria-hidden="true">
+    <path d="m4.5 10.5 3.5 3.5 7.5-8" />
+  </svg>
+);
+
+/**
+ * The button and, once it is pressed, its menu. Choosing another language or currency reloads the window (see
+ * `setLocale` and `setCurrency`), which the app survives connected (see `current_connection`), so edits pending in an
+ * open profile are asked about first. While the app is `busy` the button waits.
+ */
+export function SettingsMenu({ busy }: { busy: boolean }) {
+  const [anchor, setAnchor] = useState<Anchor | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const open = anchor !== null;
+
+  const show = () => {
+    const box = button.current?.getBoundingClientRect();
+    if (box) {
+      setAnchor({ right: document.documentElement.clientWidth - box.right, bottom: box.bottom });
+    }
+  };
+
+  const close = () => {
+    setAnchor(null);
+    button.current?.focus();
+  };
+
+  // Once the menu is on screen, the language in use takes focus, so that the arrow keys go on from it.
+  useLayoutEffect(() => {
+    if (anchor !== null) {
+      menu.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+    }
+  }, [anchor]);
+
+  // A press elsewhere closes it, and so does a resize, which moves the button but not the menu.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const pressed = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && (menu.current?.contains(target) || button.current?.contains(target))) {
+        return;
+      }
+      setAnchor(null);
+    };
+    const resized = () => setAnchor(null);
+    document.addEventListener("pointerdown", pressed, true);
+    window.addEventListener("resize", resized);
+    return () => {
+      document.removeEventListener("pointerdown", pressed, true);
+      window.removeEventListener("resize", resized);
+    };
+  }, [open]);
+
+  const chooseLanguage = (next: Locale) => {
+    close();
+    if (!busy && next !== locale) {
+      askToLeave(() => setLocale(next));
+    }
+  };
+
+  const chooseCurrency = (next: Currency) => {
+    close();
+    if (!busy && next !== currency) {
+      askToLeave(() => setCurrency(next));
+    }
+  };
+
+  // The arrow keys go through both lists, as one.
+  const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+    const at = items.findIndex((item) => item === document.activeElement);
+    let next: HTMLElement | undefined;
+    switch (event.key) {
+      case "ArrowDown":
+        next = items[(at + 1) % items.length];
+        break;
+      case "ArrowUp":
+        next = items[(at - 1 + items.length) % items.length];
+        break;
+      case "Home":
+        next = items[0];
+        break;
+      case "End":
+        next = items[items.length - 1];
+        break;
+      case "Escape":
+        // An open profile closes on Escape too: this one is the menu's.
+        event.stopPropagation();
+        event.preventDefault();
+        close();
+        return;
+      case "Tab":
+        // Tab leaves the menu for the controls after its button.
+        close();
+        return;
+      default:
+        return;
+    }
+    event.preventDefault();
+    next?.focus();
+  };
+
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        className="settings-toggle"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={BUTTON_LABEL}
+        title={BUTTON_LABEL}
+        disabled={busy}
+        onClick={() => (open ? setAnchor(null) : show())}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !open) {
+            event.preventDefault();
+            show();
+          }
+        }}
+      >
+        <svg className="settings-gear" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <svg className="settings-chevron" viewBox="0 0 20 20" aria-hidden="true">
+          <path d="m5 8 5 5 5-5" />
+        </svg>
+      </button>
+      {anchor !== null &&
+        createPortal(
+          <div
+            ref={menu}
+            className="settings-menu"
+            role="menu"
+            aria-label={appText.settingsLabel}
+            style={{ top: anchor.bottom + GAP, right: anchor.right }}
+            onKeyDown={keyDown}
+          >
+            <div role="group" aria-labelledby={`${id}-language`}>
+              <div id={`${id}-language`} className="settings-heading">
+                {appText.languageLabel}
+              </div>
+              {LANGUAGES.map(({ id: language, name }) => (
+                <button
+                  key={language}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={language === locale}
+                  lang={language}
+                  tabIndex={-1}
+                  onClick={() => chooseLanguage(language)}
+                >
+                  {FLAGS[language]}
+                  {name}
+                  {language === locale && CHECK}
+                </button>
+              ))}
+            </div>
+            <div role="group" aria-labelledby={`${id}-currency`}>
+              <div id={`${id}-currency`} className="settings-heading">
+                {appText.currencyLabel}
+              </div>
+              {CURRENCIES.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={code === currency}
+                  tabIndex={-1}
+                  onClick={() => chooseCurrency(code)}
+                >
+                  <span className="currency-sign" aria-hidden="true">
+                    {currencySymbolOf(code)}
+                  </span>
+                  {currencyName(code)}
+                  {code === currency && CHECK}
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}

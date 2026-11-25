@@ -1,0 +1,74 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FM Evolution PRO 27",
+  "mainBinaryName": "FMEvolutionPRO27",
+  "version": "0.5.3-personal.29",
+  "identifier": "io.github.fmlivre27.personal",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "FM Evolution PRO 27 · Edição pessoal",
+        "width": 1480,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "createUpdaterArtifacts": false,
+    "publisher": "FMLibreEditor contributors",
+    "copyright": "Copyright (C) 2026 FMLibreEditor contributors. GPL-3.0-or-later.",
+    "category": "Utility",
+    "shortDescription": "Edição pessoal baseada em FMLibreEditor",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English",
+          "Turkish",
+          "Spanish",
+          "German",
+          "French",
+          "Italian",
+          "Japanese",
+          "Korean",
+          "Russian",
+          "SimpChinese"
+        ],
+        "displayLanguageSelector": true
+      }
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRGQ0MyMEY1QkQzQzZCMTgKUldRWWF6eTk5U0RNVHhYVEZxZU1JanA5RnMvVytFREZya3UxMVRzUHJhZDdUSFVKVG14VWhpYzcK",
+      "endpoints": [
+        "https://github.com/tozmoz/FMLibreEditor/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

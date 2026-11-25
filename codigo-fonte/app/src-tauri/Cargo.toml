@@ -1,0 +1,37 @@
+[package]
+name = "fmlibre-app"
+description = "FMLibreEditor desktop app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+# The `_lib` suffix keeps the library name distinct from the binary name on Windows,
+# see https://github.com/rust-lang/cargo/issues/8519
+name = "fmlibre_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+fmlibre-core.workspace = true
+fmlibre-mem.workspace = true
+fmlibre-trainer = { path = "../../crates/fmlibre-trainer" }
+fmlibre-deals = { path = "../../crates/fmlibre-deals" }
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Where macOS runs the app from a read-only copy, where the app really is (see src/self_update.rs).
+core-foundation = "0.10"
+libc = "0.2.191"
+
+[target.'cfg(windows)'.dependencies]
+tempfile = "3"
+windows-sys = { version = "0.61", features = ["Win32_UI_Controls_Dialogs"] }

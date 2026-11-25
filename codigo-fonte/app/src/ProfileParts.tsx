@@ -1,0 +1,563 @@
+import { usePendingEdits } from "./pendingEdits";
+import { Fragment, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Ability } from "./Ability";
+import { call } from "./api";
+import { EditableValue, EditBar, EditInput } from "./EditControls";
+import { converts } from "./currency";
+import { extendContract, numberFromDate, plusYears } from "./editing";
+import { describeError, formatDate, formatMoney, formatNumber } from "./format";
+import { PERSONALITY_LABELS, profileText, type PersonalityKey } from "./labels";
+import { PanelResizer, usePanelWidth } from "./PanelResizer";
+import type { Attribute, FmDate, Reputation } from "./types";
+import { useModal } from "./useModal";
+import {
+  EditorContext,
+  SessionContext,
+  useEditableField,
+  useEditSession,
+  type ProfileEditing,
+} from "./useProfileEditing";
+
+// What the player, staff and club profiles have in common: the panel frame, loading, rating rows and
+// the label/value blocks. The frame also holds what editing adds to a profile (see EditControls).
+
+/** Reputation is stored on a 0–10000 scale. */
+const REPUTATION_MAX = 10000;
+
+export type Loaded<T> = { details: T; error?: undefined } | { details?: undefined; error: string };
+
+/** What ties a tab to its panel for assistive technology: the panel's own id, and the id of the tab that names it. */
+export interface PanelIds {
+  id: string;
+  labelledBy: string;
+}
+
+/** Loads a profile with `command`, and again when `version` changes: the game data was read again. */
+export function useProfileDetails<T>(command: string, uid: number, version: number): Loaded<T> | null {
+  const [loaded, setLoaded] = useState<Loaded<T> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const details = await call<T>(command, { uid });
+        if (!cancelled) {
+          setLoaded({ details });
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setLoaded({ error: describeError(e) });
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [command, uid, version]);
+
+  return loaded;
+}
+
+interface ProfileFrameProps {
+  /** Left of the names: a person's face, or a club's logo. */
+  picture?: ReactNode;
+  name: string;
+  /** A second name under the name when it differs: a person's full name, a club's short name. */
+  fullName: string | null;
+  /** Sits beside the name. */
+  badge?: ReactNode;
+  /** The line under the names; a profile with nothing to say there leaves it out. */
+  meta?: ReactNode;
+  /**
+   * The small print under that, e.g. the birth date: its parts, set apart by dots, each kept on one line. A part may
+   * hold an input, which takes the place of its value while the profile is edited.
+   */
+  vitals: ReadonlyArray<ReactNode>;
+  /** The abilities of a person, under the close button; inputs where they are while the person is edited. */
+  currentAbility?: number;
+  potentialAbility?: number;
+  /** Under the close button instead of the abilities, e.g. the reputation of a club. */
+  side?: ReactNode;
+  /** Buttons before Edit in the header, e.g. the player's Compare button. */
+  actions?: ReactNode;
+  /** Between the header and the body, so that it stays in view while the body scrolls: the tabs of a club. */
+  tabs?: ReactNode;
+  tabsOnSide?: boolean;
+  /** For a body that holds a table, such as a club's squad: the panel takes more of the window than a profile does. */
+  wide?: boolean;
+  /**
+   * A dialog over the window instead of a panel beside a list, as a player opened from a club's squad is: Tab and
+   * Escape stay in it (see `useModal`), and it has no handle to resize it.
+   */
+  modal?: boolean;
+  loaded: Loaded<unknown> | null;
+  onClose: () => void;
+  onBack?: () => void;
+  backLabel?: string;
+  /**
+   * The editing of a profile, from `useProfileEditing`: it adds the Edit button, the footer and the inputs (of the
+   * body, and of the header too: see `side`), and makes closing the profile ask first while changes are pending.
+   */
+  editing?: ProfileEditing;
+  /** The body, once the profile has loaded. */
+  children?: ReactNode;
+}
+
+/**
+ * The panel beside a list, or a dialog over the window (`modal`): header with the abilities (or another summary, as
+ * `side`) and a close button, and a scrolling body that shows the loading state or error. Mount it with `key={uid}` so
+ * a new person starts at the top.
+ */
+export function ProfileFrame(props: ProfileFrameProps) {
+  const { picture, name, fullName, badge, meta, vitals, currentAbility, potentialAbility } = props;
+  const { side, actions, tabs, tabsOnSide, wide, modal = false, loaded, onClose, onBack, editing, children } = props;
+  const closeProfile = editing ? () => editing.guardClose(onClose) : onClose;
+  const onEscape = onBack ?? (editing ? () => editing.escape(onClose) : onClose);
+  const panelWidth = usePanelWidth(wide ? "wide" : "profile");
+  const [expanded, setExpanded] = useState(false);
+  const section = useRef<HTMLElement>(null);
+
+  // A dialog keeps Escape from the profile behind it, which would close too, and takes focus when it opens.
+  useModal(section, true, onEscape, modal);
+  useEffect(() => {
+    if (modal) {
+      section.current?.focus();
+    }
+  }, [modal]);
+
+  useEffect(() => {
+    if (modal) {
+      return;
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.isComposing && section.current?.getClientRects().length && !section.current.closest(".inactive,[hidden]")) {
+        onEscape();
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onEscape, modal]);
+
+  // The inputs reach the whole panel, so `side` can hold one too (a club's reputation is in the header).
+  return (
+    <SessionContext.Provider value={editing?.session ?? null}>
+      <section
+        ref={section}
+        className={["profile", editing?.stage === "edit" && "editing", wide && "wide", modal && "popup", expanded && "expanded", onBack && "profile-page", tabsOnSide && "section-navigation"]
+          .filter(Boolean)
+          .join(" ")}
+        role={modal ? "dialog" : "region"}
+        aria-modal={modal || undefined}
+        aria-label={name}
+        aria-busy={!loaded}
+        tabIndex={modal ? -1 : undefined}
+        style={modal || expanded || onBack ? undefined : panelWidth.style}
+      >
+        {!modal && !expanded && !onBack && <PanelResizer panelWidth={panelWidth} />}
+        <header className="profile-head">
+          {onBack && <button type="button" className="profile-back" onClick={onBack}>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10H4m5-5-5 5 5 5" /></svg>
+            {props.backLabel ?? "Voltar"}
+          </button>}
+          {picture}
+          <div className="profile-id">
+            <h2>
+              {name}
+              {badge}
+            </h2>
+            {fullName && fullName !== name && <p className="profile-fullname">{fullName}</p>}
+            {meta !== undefined && <p className="profile-meta">{meta}</p>}
+            <p className="profile-vitals">
+              {/* The dot stays at the end of a line, with the part before it. */}
+              {vitals.filter(Boolean).map((part, i) => (
+                <Fragment key={i}>
+                  {i > 0 && " · "}
+                  <span className="vital">{part}</span>
+                </Fragment>
+              ))}
+            </p>
+          </div>
+          <div className="profile-side">
+            <div className="profile-actions">
+              {actions}
+
+              {!modal && !onBack && (
+                <button className="icon-button" onClick={() => setExpanded((v) => !v)}
+                  aria-label={expanded ? "Restaurar perfil" : "Ampliar perfil"}
+                  title={expanded ? "Restaurar perfil" : "Ampliar perfil"} aria-pressed={expanded}>
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d={expanded ? "M7 3v4H3M13 17v-4h4M7 7l-4-4M13 13l4 4" : "M3 8V3h5M17 12v5h-5M3 3l5 5M17 17l-5-5"} /></svg>
+                </button>
+              )}
+              {!onBack && <button
+                className="icon-button"
+                onClick={closeProfile}
+                aria-label={profileText.close}
+                title={profileText.close}
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="m5 5 10 10M15 5 5 15" />
+                </svg>
+              </button>}
+            </div>
+            {side ??
+              (currentAbility !== undefined && potentialAbility !== undefined && (
+                <ProfileAbilities current={currentAbility} potential={potentialAbility} />
+              ))}
+          </div>
+        </header>
+
+        {tabs}
+
+        <div className="profile-body">
+          {!loaded && (
+            <p className="profile-status" role="status">
+              {profileText.loading}
+            </p>
+          )}
+          {loaded?.error !== undefined && (
+            <div className="banner" role="alert">
+              {loaded.error}
+            </div>
+          )}
+          {children}
+        </div>
+
+        {editing && <EditBar editing={editing} />}
+      </section>
+    </SessionContext.Provider>
+  );
+}
+
+/** Each bar uses the game's 200-point scale. Negative PA is represented by the existing range label. */
+export function ProfileAbilities({ current, potential }: { current: number; potential: number }) {
+  return (
+    <div className="profile-abilities ability-summary">
+      <AbilityRating field="current_ability" value={current}
+        label={profileText.currentAbility} short={profileText.currentAbilityShort} />
+      <AbilityRating field="potential_ability" value={potential}
+        label={profileText.potentialAbility} short={profileText.potentialAbilityShort} />
+    </div>
+  );
+}
+
+function AbilityRating({ field, value, label, short }: { field: string; value: number; label: string; short: string }) {
+  const input = useEditSession()?.input(field);
+  const shown = input ? Number(input.text) : value;
+  return (
+    <div className="ability-rating" data-ability={field}>
+      <abbr title={label}>{short}</abbr>
+      <EditableValue field={field}><Ability value={value} /></EditableValue>
+      {Number.isInteger(shown) && shown > 0 && shown <= 200 && (
+        <span className="ability-track" role="meter" aria-label={label} aria-valuemin={0}
+          aria-valuemax={200} aria-valuenow={shown}>
+          <span style={{ width: `${shown / 2}%` }} />
+        </span>
+      )}
+      {shown < 0 && <span className="ability-range" title={profileText.potentialRange}>{profileText.potentialRange}</span>}
+    </div>
+  );
+}
+
+/**
+ * "Born 26 Mar 1982 (age 44)", for a person whose birth date is known; the date is an input while it can be edited.
+ */
+export function Born({ dateOfBirth, age }: { dateOfBirth: FmDate; age: number | null }) {
+  return (
+    <>
+      {profileText.born} <EditableValue field="date_of_birth">{formatDate(dateOfBirth)}</EditableValue>
+      {age !== null && ` (${profileText.age(age)})`}
+    </>
+  );
+}
+
+export interface RatingRow {
+  key: string;
+  /** The key of the editable field behind the row, e.g. "attribute.finishing"; while editing, its value is an input. */
+  field?: string;
+  label: string;
+  value: number | undefined;
+  /** Hover text, e.g. the value as stored. */
+  title?: string;
+  /** A low value is the good one, so the colours run the other way. */
+  lowerIsBetter?: boolean;
+  /** Apply the editor's numeric scale, independently of the desirability of a high value. */
+  attributeChip?: boolean;
+  importance?: "essential" | "secondary";
+}
+
+/** Ratings where a low value is the good one. */
+export const LOWER_IS_BETTER = new Set<string>(["injury_proneness", "dirtiness", "controversy"]);
+
+const PERSONALITY: PersonalityKey[] = [
+  "adaptability", "ambition", "loyalty", "pressure", "professionalism", "sportsmanship", "temperament", "controversy",
+];
+
+/** An attribute as FM shows it (1–20), with the value as stored in the hover text. */
+export function attributeRow(
+  key: string,
+  label: string,
+  attribute: Attribute | undefined,
+  options: { lowerIsBetter?: boolean; scale?: number } = {},
+): RatingRow {
+  const { lowerIsBetter = false, scale } = options;
+  const notes = [attribute && profileText.raw(attribute.raw, scale), lowerIsBetter && profileText.lowerIsBetter];
+  return {
+    key,
+    field: `attribute.${key}`,
+    label,
+    value: attribute?.value,
+    title: notes.filter(Boolean).join(" · ") || undefined,
+    lowerIsBetter,
+    attributeChip: true,
+  };
+}
+
+export function personalityRows(personality: Record<string, number>): RatingRow[] {
+  return PERSONALITY.map((key) => {
+    const lowerIsBetter = LOWER_IS_BETTER.has(key);
+    return {
+      key,
+      field: `personality.${key}`,
+      label: PERSONALITY_LABELS[key],
+      value: personality[key],
+      title: lowerIsBetter ? profileText.lowerIsBetter : undefined,
+      lowerIsBetter,
+      attributeChip: true,
+    };
+  });
+}
+
+/** FM's colour bands for a 1–20 rating: 1–5, 6–10, 11–15 and 16–20. */
+export function tierClass(value: number, lowerIsBetter = false): string {
+  const score = lowerIsBetter ? 21 - value : value;
+  return `tier-${score <= 5 ? 1 : score <= 10 ? 2 : score <= 15 ? 3 : 4}`;
+}
+
+/** The rows of a rating group: a label and the value on a chip coloured by band, or an input while editing. */
+export function RatingList({ rows }: { rows: RatingRow[] }) {
+  return (
+    <dl className="stats ratings">
+      {rows.map((row) => (
+        <RatingItem key={row.key} row={row} />
+      ))}
+    </dl>
+  );
+}
+
+const RATING_BANDS = ["very-low", "low", "medium", "high"];
+
+function ratingBand(value: number) {
+  if (!Number.isInteger(value) || value < 1 || value > 20) return undefined;
+  return value === 20 ? "maximum" : RATING_BANDS[Math.floor((value - 1) / 5)];
+}
+
+function RatingItem({ row }: { row: RatingRow }) {
+  const editing = useEditableField(row.field);
+  const session = useEditSession();
+  const input = row.attributeChip && editing && row.field ? session?.input(row.field) : undefined;
+  const shown = input ? Number(input.text) : row.value;
+  const band = row.attributeChip && shown !== undefined ? ratingBand(shown) : undefined;
+  const fallbackTier = !row.attributeChip && row.value !== undefined ? tierClass(row.value, row.lowerIsBetter) : "";
+  return (
+    <div className="stat" title={row.title} data-role-importance={row.importance}>
+      <dt>
+        {row.label}
+        {row.importance && (
+          <span className="sr-only"> · {row.importance === "essential" ? "Essencial para a função" : "Secundário para a função"}</span>
+        )}
+      </dt>
+      {editing && row.field ? (
+        <dd className="edit-cell" data-rating-tier={band}>
+          <EditInput field={row.field} />
+        </dd>
+      ) : (
+        <dd className={`value ${fallbackTier}`} data-rating-tier={band}>
+          {row.value ?? profileText.none}
+        </dd>
+      )}
+    </div>
+  );
+}
+
+export function RatingGroup({ title, rows }: { title: string; rows: RatingRow[] }) {
+  return (
+    <section className="profile-group">
+      <h3>{title}</h3>
+      <RatingList rows={rows} />
+    </section>
+  );
+}
+
+export function Fact({ label, title, children }: { label: ReactNode; title?: string; children: ReactNode }) {
+  return (
+    <div className="stat" title={title}>
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
+
+/** The weekly wage, with the note that the game stores it in pounds; an input while the wage can be edited. */
+export function WageFact({ wage }: { wage: number }) {
+  return (
+    <>
+      <dl className="stats">
+        <Fact label={profileText.wage}>
+          <EditableValue field="contract.wage">{formatMoney(wage)}</EditableValue>
+        </Fact>
+      </dl>
+      <p className="note">{profileText.wageNote(converts)}</p>
+    </>
+  );
+}
+
+/**
+ * When the contract of the player or member of staff `uid` was signed, ends and began; the end is a date input while it
+ * can be edited. Under the dates, a contract that has an end can be extended (see `ContractExtension`).
+ */
+export function ContractDates({
+  entity,
+  uid,
+  contract,
+}: {
+  entity: "player" | "staff";
+  uid: number;
+  contract: { signed: FmDate | null; expires: FmDate | null; joined: FmDate | null };
+}) {
+  const date = (value: FmDate | null) => formatDate(value) || profileText.none;
+  return (
+    <div className="contract-dates">
+      <dl className="stats">
+        <Fact label={profileText.signed}>{date(contract.signed)}</Fact>
+        <Fact label={profileText.expires}>
+          <EditableValue field="contract.expires">{date(contract.expires)}</EditableValue>
+        </Fact>
+        <Fact label={profileText.joined}>{date(contract.joined)}</Fact>
+      </dl>
+      {contract.expires && <ContractExtension entity={entity} uid={uid} expires={contract.expires} />}
+    </div>
+  );
+}
+
+/** How many years Extend makes a contract run longer. */
+const CONTRACT_YEARS = 5;
+
+/**
+ * Extend: the contract runs five years longer, the day it ends moved on by as many years (30 June 2028 to 30 June
+ * 2033). Like healing, it asks no question; Changes undoes it. It waits while the game cannot be written to, and is not
+ * there while the profile is edited, when the end is an input.
+ */
+function ContractExtension({ entity, uid, expires }: { entity: "player" | "staff"; uid: number; expires: FmDate }) {
+  const { editable, readOnlyNote, onEdited } = useContext(EditorContext);
+  const pending = usePendingEdits();
+  const blocked = pending.count > 0 || pending.busy;
+  const [extending, setExtending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const alive = useRef(true);
+  const ends = numberFromDate(expires);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  // After extending, the button stays busy until the profile has read the game again, which gives the new end.
+  useEffect(() => {
+    setExtending(false);
+  }, [ends]);
+
+
+  const extend = async () => {
+    // While it is under way the button is only dimmed (aria-disabled), not disabled: a disabled button loses focus.
+    if (extending || blocked) {
+      return;
+    }
+    setExtending(true);
+    setError(null);
+    try {
+      await extendContract(entity, uid, CONTRACT_YEARS);
+      // The game has changed: the lists, the profile and the change log read it again.
+      onEdited();
+    } catch (e) {
+      if (alive.current) {
+        setError(describeError(e));
+        setExtending(false);
+      }
+    }
+  };
+
+  return (
+    <div className="contract-extend">
+      <button
+        type="button"
+        className="heal-toggle"
+        disabled={!editable || blocked}
+        aria-disabled={extending || undefined}
+        aria-busy={extending || undefined}
+        title={
+          editable
+            ? profileText.extendContractTitle(CONTRACT_YEARS, formatDate(plusYears(expires, CONTRACT_YEARS)))
+            : readOnlyNote
+        }
+        onClick={() => void extend()}
+      >
+        {extending ? profileText.extendingContract : profileText.extendContract(CONTRACT_YEARS)}
+      </button>
+      {error !== null && (
+        <p className="heal-error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Home, current and world reputation as bars; the figures are inputs while the person is edited. */
+export function ReputationBars({ reputation }: { reputation: Reputation }) {
+  return (
+    <dl className="stats">
+      <ReputationBar label={profileText.reputationHome} value={reputation.home} field="reputation.home" />
+      <ReputationBar label={profileText.reputationCurrent} value={reputation.current} field="reputation.current" />
+      <ReputationBar label={profileText.reputationWorld} value={reputation.world} field="reputation.world" />
+    </dl>
+  );
+}
+
+function ReputationBar({ label, value, field }: { label: string; value: number; field: string }) {
+  const style = { "--fill": reputationFill(value) } as CSSProperties;
+  return (
+    <div className="stat bar-stat">
+      <dt>{label}</dt>
+      <dd>
+        <span className="bar" style={style} aria-hidden="true" />
+        <EditableValue field={field}>
+          <span className="figure">{formatNumber(value)}</span>
+        </EditableValue>
+      </dd>
+    </div>
+  );
+}
+
+/** How much of a bar a reputation fills, as a CSS length. */
+function reputationFill(value: number): string {
+  return `${Math.min(100, (value * 100) / REPUTATION_MAX)}%`;
+}
+
+/**
+ * One reputation as a compact bar with the number on it, in the style of the abilities; a dash
+ * when the reputation is unknown. For the club list and the club header.
+ */
+export function ReputationMeter({ value }: { value: number | null }) {
+  if (value === null) {
+    return <span className="muted">{profileText.none}</span>;
+  }
+  const style = { "--fill": reputationFill(value) } as CSSProperties;
+  return (
+    <span className="ability rep" style={style}>
+      {formatNumber(value)}
+    </span>
+  );
+}

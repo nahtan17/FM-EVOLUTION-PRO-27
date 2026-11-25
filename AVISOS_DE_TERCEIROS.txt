@@ -1,0 +1,13 @@
+FM Livre 27 deriva do FMLibreEditor e é distribuído sob GPL-3.0-or-later. Consulte LICENSE e os fontes completos em codigo-fonte.
+
+FM27 Trainer 0.2.8: Copyright (c) 2026 Sem Hiel. Licença MIT, incluída integralmente em FM27_Trainer_LICENSE.txt e codigo-fonte/vendor/fm27-trainer/LICENSE. Origem: https://github.com/SemHiel2003/fm27-trainer (3d09fc039ea6d7305cb65b39dcbe046e3a8cbe7e). A integração usa seus módulos de leitura, escrita, OCR e planejamento, com modificações descritas nos fontes.
+
+WebView2Loader.dll: Microsoft WebView2 SDK 1.0.3800.47. Aviso em WebView2_LICENSE.txt.
+
+Os avisos dos pacotes Rust, JavaScript e fontes estão em licencas/ e nos fontes. As versões constam de codigo-fonte/Cargo.lock e codigo-fonte/app/package-lock.json.
+
+Mapeamentos adicionais: Football-Manager-27-Editor, Jackhamerp24 e colaboradores, GPL-3.0. Licença em FM27_Editor_Reference_LICENSE.txt; fontes de referência e commit em codigo-fonte/vendor/fm27-reference.
+
+Revisão .14: os mapeamentos de estádios foram conferidos na referência v1.5.2, commit a3b7f0ab2131549cb2449587731d13e478ebc9e1. Consulte o relatório da versão.
+
+Revisão .23: os mapeamentos de proposta e agendamento foram conferidos com a referência v1.5.2, commit a3b7f0ab2131549cb2449587731d13e478ebc9e1.

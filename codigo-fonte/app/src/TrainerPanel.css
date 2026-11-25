@@ -1,0 +1,97 @@
+.trainer-workspace { flex-direction: column; min-width: 0; }
+.trainer-heading { display:flex; flex:none; justify-content:space-between; align-items:center; gap:18px; padding:12px 16px; background:#1c1f29; color:white; }
+.trainer-heading h1 { margin:3px 0 4px; font-size:20px; font-weight:750; }
+.trainer-heading p { margin:0; color:#d8e7ff; }
+.trainer-tools { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; max-width:490px; }
+.trainer-heading button { color:white; border-color:#ffffff60; background:#ffffff0c; }
+.trainer-tabs { display:flex; flex:none; gap:4px; padding:8px 18px 0; border-bottom:1px solid var(--border); background:#181920; }
+.trainer-tabs button { border:0; border-radius:5px 5px 0 0; padding:10px 15px; }
+.trainer-tabs button[aria-selected="true"] { background:var(--accent-soft); color:white; }
+.trainer-scroll { flex:1; min-height:0; overflow:auto; padding:12px; }
+.trainer-scroll input:not([type="checkbox"]),.trainer-scroll select { background:var(--field); color:var(--text); border:1px solid var(--border-strong); border-radius:4px; padding:6px 8px; font:inherit; font-size:12px; }
+.trainer-two { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:15px; margin-bottom:15px; }
+.trainer-stack { display:grid; gap:15px; }
+.trainer-card { min-width:0; padding:12px; border:1px solid var(--border); border-radius:7px; background:var(--panel); margin-bottom:15px; }
+.trainer-two > .trainer-card,.trainer-stack > .trainer-card { margin-bottom:0; }
+.trainer-card h2 { margin:0 0 10px; font-size:14px; font-weight:700; }
+.trainer-card p,.trainer-compat p { font-size:12px; line-height:1.6; margin:6px 0 12px; }
+.trainer-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.trainer-between { justify-content:space-between; }
+.trainer-row label,.trainer-check { display:flex; align-items:center; gap:7px; font-size:12px; }
+.trainer-check { margin:13px 0; }
+.trainer-source { color:var(--accent-text); font-size:11px!important; margin-top:12px!important; }
+.trainer-cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:15px; }
+.trainer-metric { border:1px solid var(--border); border-radius:7px; padding:14px 15px; background:var(--panel); display:grid; gap:8px; }
+.trainer-metric > span { color:#b8cbe9; font-size:11px; }
+.trainer-metric strong { font-size:27px; }
+.trainer-metric strong small { margin-left:3px; font-size:12px; color:var(--accent-text); }
+.trainer-metric progress { width:100%; height:5px; accent-color:var(--accent); }
+.trainer-factors { margin-top:12px; }
+.trainer-factors label { display:grid; grid-template-columns:minmax(0,1fr) 65px 12px; gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid #ffffff07; font-size:12px; }
+.trainer-factors input { width:65px; padding:4px 6px; text-align:right; }
+.trainer-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; margin-bottom:14px; }
+.trainer-form > label { display:grid; align-content:start; gap:6px; font-size:11px; color:#b8cbe9; }
+.trainer-form :is(input,select) { min-width:0; width:100%; min-height:31px; }
+.trainer-form .trainer-check { display:flex; align-items:center; }
+.trainer-form .trainer-check input { width:auto; min-height:0; }
+.trainer-form .trainer-row { flex-wrap:nowrap; }
+.trainer-notice { padding:11px 14px; margin-bottom:14px; border:1px solid var(--border-strong); border-radius:5px; background:var(--hover); font-size:12px; overflow-wrap:anywhere; }
+.trainer-progress { color:var(--accent-text); margin:0 0 12px; }
+.trainer-compat { border:1px solid #87733b; border-radius:6px; padding:13px 15px; margin-bottom:15px; background:#e4bd4d0b; }
+.trainer-compat label { display:flex; gap:8px; align-items:center; }
+.trainer-areas { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; }
+.trainer-areas > div { display:grid; gap:8px; background:#222e43; border-radius:5px; padding:10px; }
+.trainer-areas span { font-size:11px; color:#b7c9e5; }
+.trainer-areas strong { font-size:18px; }
+.trainer-table-scroll { width:100%; overflow:auto; max-height:420px; }
+.trainer-table-scroll table { width:100%; }
+.trainer-table-scroll .grid td { min-width:70px; }
+.trainer-score { display:block; color:#82b0ff; font-weight:700; }
+.trainer-tactic-select { display:flex; align-items:center; gap:10px; margin:15px 0; }
+.trainer-plan table { width:100%; margin-top:12px; }
+.trainer-plan .grid td { white-space:normal; }
+.trainer-log ol { padding-left:18px; font-size:11px; color:#b8cbe9; line-height:1.9; }
+.trainer-card summary { cursor:pointer; font-size:12px; font-weight:650; }
+.trainer-credit { color:#8493ae; font-size:10px; margin:15px 0 2px; }
+@media(max-width:1100px) { .trainer-two { grid-template-columns:1fr; } .trainer-cards,.trainer-areas { grid-template-columns:repeat(2,minmax(0,1fr)); } .trainer-heading { align-items:flex-start; } .trainer-tools { max-width:285px; } }
+.trainer-context { margin-bottom:14px; }
+.trainer-context .trainer-form { margin-top:0; }
+.trainer-import { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.trainer-import input[type="file"] { max-width:220px; }
+.trainer-row label input[type="number"] { width:76px; }
+.trainer-development { max-width:850px; }
+.trainer-development .trainer-notice { margin-top:14px; }
+.development-selection { display:grid; gap:10px; margin:14px 0; }
+.development-selection h3 { margin:0; font-size:15px; }
+.development-selection .grid { width:100%; }
+.development-bonus { color:#85e5bc; font-weight:650; }
+.training-templates { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 16px; margin:12px 0; }
+.training-templates select { max-width:240px; }
+.trainer-plan .grid select { width:100%; min-width:124px; }
+.trainer-plan .grid select.training-session-edited { border-color:#6a92f8; }
+.trainer-plan .trainer-table-scroll { max-height:none; margin-bottom:10px; }
+.training-day-toggle { display:flex; align-items:center; gap:5px; white-space:nowrap; }
+
+.advanced-fields {
+  border: 0;
+  padding: 0;
+  margin: 0 0 .75rem;
+  min-width: 0;
+}
+.advanced-form { margin: .8rem 0; }
+.advanced-scroll { max-height: 24rem; overflow: auto; }
+.advanced-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: .35rem .75rem;
+  margin: .5rem 0;
+}
+.development-chart {
+  display: block;
+  width: min(100%, 58rem);
+  margin: .5rem 0;
+  color: inherit;
+}
+.development-chart line { stroke: currentColor; opacity: .23; }
+.development-chart text { fill: currentColor; font-size: 12px; }
+.trainer-development .batch-tools { margin-top: 1rem; }

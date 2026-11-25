@@ -1,0 +1,18 @@
+[package]
+name = "fmlibre-core"
+description = "Football Manager specific logic for FMLibreEditor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+chrono = "0.4"
+fmlibre-mem.workspace = true
+fmlibre-deals = { path = "../fmlibre-deals" }
+memchr = "2.8.3"
+serde.workspace = true
+serde_json.workspace = true
+toml = "1.1.8"
+unicode-normalization = "0.1.26"

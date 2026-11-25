@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in FMLibreEditor does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. First check [INSTALL.md](https://github.com/tozmoz/FMLibreEditor/blob/main/docs/INSTALL.md), which covers the most common problems.
+  - type: input
+    id: version
+    attributes:
+      label: FMLibreEditor version
+      description: Shown at the foot of the app's window.
+      placeholder: "0.5.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Where you run Football Manager 27
+      options:
+        - Windows, Xbox / Game Pass
+        - Windows, Steam
+        - macOS, Steam
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Paste any error the app showed.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Versions later than 0.5.0 have Copy diagnostics at the foot of the window. If yours has it and the app connects to the game, press it and paste it here. It holds no names or paths.
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: A screenshot of the app, and of the game's screen if it shows something else, helps a lot. Drag images here.
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: The player, staff member or club involved, or whether it happens every time.

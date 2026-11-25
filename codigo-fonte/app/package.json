@@ -1,0 +1,32 @@
+{
+  "name": "fmlibre-app",
+  "private": true,
+  "version": "0.5.3",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "release": "tauri build --no-bundle",
+    "bridge": "cargo build --release -p fmlibre-bridge --target aarch64-apple-darwin && cargo build --release -p fmlibre-bridge --target x86_64-apple-darwin && mkdir -p ../target/universal-apple-darwin/release && lipo -create -output ../target/universal-apple-darwin/release/libfmlibre_bridge.dylib ../target/aarch64-apple-darwin/release/libfmlibre_bridge.dylib ../target/x86_64-apple-darwin/release/libfmlibre_bridge.dylib && lipo -create -output ../target/universal-apple-darwin/release/fmlibre-launch ../target/aarch64-apple-darwin/release/fmlibre-launch ../target/x86_64-apple-darwin/release/fmlibre-launch && codesign --force --sign - ../target/universal-apple-darwin/release/libfmlibre_bridge.dylib ../target/universal-apple-darwin/release/fmlibre-launch",
+    "release:mac": "npm run bridge && tauri build --target universal-apple-darwin --bundles app --config src-tauri/tauri.bridge.conf.json"
+  },
+  "dependencies": {
+    "@fontsource-variable/archivo": "^5.3.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2.7.2",
+    "@tauri-apps/plugin-updater": "^2.14.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^6.0.2",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16"
+  }
+}
